@@ -1,6 +1,12 @@
-name = "auth-api"
-main = "src/index.ts"
+name = "simple-backend"
 compatibility_date = "2024-12-30"
+
+main = "src/index.ts"
+workers_dev = true
+
+[[routes]]
+pattern = "https://your-domain.com/*"
+zone_id = "your-zone-id"
 
 [vars]
 JWT_SECRET = "your-secret-key-change-this-in-production"
