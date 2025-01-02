@@ -5,8 +5,8 @@ main = "src/index.ts"
 workers_dev = true
 
 [[routes]]
-pattern = "https://your-domain.com/*"
-zone_id = "your-zone-id"
+pattern = "https://api.pasts.dev/*"
+zone_id = "88871c370847b4273ad055bbd9752c18"
 
 [vars]
 JWT_SECRET = "your-secret-key-change-this-in-production"
@@ -15,10 +15,13 @@ REFRESH_TOKEN_EXPIRES = "2592000"  # 30 days in seconds
 
 [[kv_namespaces]]
 binding = "USERS_KV"
-id = "your-kv-namespace-id"
-preview_id = "your-preview-kv-namespace-id"
+id = "0828023a328849dbbaeb552087fd0b75"
+preview_id = "4be7362c067b4ab8ba9c583697046ab8"
 
 [[kv_namespaces]]
 binding = "SESSIONS_KV"
-id = "your-kv-namespace-id"
-preview_id = "your-preview-kv-namespace-id"
+id = "f7ce26892f354e11bd08842af2b9414e"
+preview_id = "65122407cd5f4d76922c6ce3c9710d3c"
+
+[observability.logs]
+enabled = true  # default: false
