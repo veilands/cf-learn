@@ -1,5 +1,6 @@
 name = "simple-backend"
 compatibility_date = "2024-12-30"
+assets = { directory = "./public/" } 
 
 main = "src/index.ts"
 workers_dev = true
@@ -14,14 +15,9 @@ ACCESS_TOKEN_EXPIRES = "1800"  # 30 minutes in seconds
 REFRESH_TOKEN_EXPIRES = "2592000"  # 30 days in seconds
 
 [[kv_namespaces]]
-binding = "USERS_KV"
-id = "0828023a328849dbbaeb552087fd0b75"
-preview_id = "4be7362c067b4ab8ba9c583697046ab8"
-
-[[kv_namespaces]]
-binding = "SESSIONS_KV"
-id = "f7ce26892f354e11bd08842af2b9414e"
-preview_id = "65122407cd5f4d76922c6ce3c9710d3c"
+binding = "API_KEYS"
+id = "24b5458920ef434c96759ea5490211c4"
+preview_id = "1407d474e65045d298e75bebeb68dea0"
 
 [observability.logs]
 enabled = true  # default: false
