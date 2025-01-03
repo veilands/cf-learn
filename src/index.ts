@@ -3,6 +3,19 @@ addEventListener('fetch', (event) => {
 });
 
 async function handleRequest(request: Request): Promise<Response> {
+  const apiKey = request.headers.get('x-api-key');
+
+  if (!apiKey) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // Check if the API key exists in the KV store
+  const isValidKey = await API_KEYS.get(apiKey);
+
+  if (!isValidKey) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const url = new URL(request.url);
   if (url.pathname === '/favicon.ico') {
     return handleFaviconRequest();
@@ -38,4 +51,7 @@ function handleDateRequest(): Response {
   return new Response(currentDate, {
     headers: { 'content-type': 'text/plain' },
   });
+}
+function atob(base64Favicon: string): Iterable<number> {
+  throw new Error("Function not implemented.");
 }
