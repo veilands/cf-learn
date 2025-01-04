@@ -11,7 +11,8 @@
     "test:watch": "jest --watch",
     "format": "prettier --write .",
     "lint": "eslint . --ext .ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "prepare": "husky install"
   },
   "author": "Toms Veilands",
   "license": "MIT",
@@ -23,6 +24,7 @@
     "@typescript-eslint/parser": "^6.17.0",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "jest-environment-miniflare": "^2.14.1",
     "prettier": "^3.1.1",

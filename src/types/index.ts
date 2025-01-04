@@ -1,30 +1,16 @@
 export interface Env {
-  USERS_KV: KVNamespace;
-  SESSIONS_KV: KVNamespace;
-  JWT_SECRET: string;
-  ACCESS_TOKEN_EXPIRES: string;
-  REFRESH_TOKEN_EXPIRES: string;
+  API_KEYS: KVNamespace;
+  INFLUXDB_URL: string;
+  INFLUXDB_TOKEN: string;
+  INFLUXDB_ORG: string;
+  INFLUXDB_BUCKET: string;
 }
 
-export interface User {
-  username: string;
-  password: string;
-  role: 'user' | 'admin';
-  createdAt: string;
-}
-
-export interface Session {
-  userId: string;
-  userAgent: string;
-  createdAt: string;
-}
-
-export interface JWTPayload {
-  sub: string;
-  sessionId: string;
-  role: string;
-  exp: number;
-  iat: number;
+export interface Measurement {
+  device_id: string;
+  temperature: number;
+  humidity: number;
+  timestamp?: string;
 }
 
 export type Handler = (

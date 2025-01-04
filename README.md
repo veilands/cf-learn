@@ -83,6 +83,25 @@ Returns the current date in local format.
 ##### GET /version
 Returns the current API version.
 
+##### POST /measurement
+Stores IoT device measurements in InfluxDB Cloud.
+
+Request body:
+```json
+{
+  "device_id": "string",
+  "temperature": number,
+  "humidity": number,
+  "timestamp": "string" (optional, ISO format)
+}
+```
+
+Response:
+- 201: Measurement stored successfully
+- 401: Unauthorized
+- 405: Method not allowed
+- 500: Error storing measurement
+
 #### Static Files
 
 Static files are served from the `/public` directory. Current static files:
