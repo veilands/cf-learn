@@ -1,40 +1,58 @@
-# Cloudflare Workers Project
+# Cloudflare Workers IoT Backend
 
-This project is built using Cloudflare Workers with TypeScript support.
+A high-performance IoT backend built with Cloudflare Workers, featuring real-time metrics tracking, optimized data storage, and comprehensive health monitoring.
+
+## Features
+
+- Real-time IoT data ingestion and processing
+- Advanced metrics tracking with KV store and InfluxDB
+- Secure API key authentication
+- Optimized performance with caching and parallel operations
+- Comprehensive health monitoring
+- Detailed system metrics
 
 ## Prerequisites
 
-- Node.js (v16 or higher recommended)
+- Node.js (v16 or higher)
 - npm or yarn
 - Cloudflare account
-- Wrangler CLI (Cloudflare Workers CLI)
+- Wrangler CLI
+- InfluxDB instance (for metrics storage)
 
-## Setup
+## Environment Setup
 
 1. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Login to Cloudflare (if not already logged in):
+2. Configure Cloudflare:
 ```bash
 npx wrangler login
 ```
 
-## Development
+3. Set up environment variables in `wrangler.toml`:
+```toml
+[vars]
+INFLUXDB_URL = "your-influxdb-url"
+INFLUXDB_TOKEN = "your-influxdb-token"
+INFLUXDB_ORG = "your-org"
+INFLUXDB_BUCKET = "your-bucket"
 
-Start the development server:
-```bash
-npm run dev
+[[kv_namespaces]]
+binding = "API_KEYS"
+id = "your-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "METRICS"
+id = "your-metrics-namespace-id"
 ```
 
-This will start a local development server using Wrangler.
+## Development
 
-## Building
-
-Build the project:
+Start local development server:
 ```bash
-npm run build
+npm run dev
 ```
 
 ## Deployment
@@ -44,282 +62,309 @@ Deploy to Cloudflare Workers:
 npm run deploy
 ```
 
-## Project Structure
-
-- `/src` - Source code files
-- `wrangler.toml` - Cloudflare Workers configuration
-- `tsconfig.json` - TypeScript configuration
-- `.eslintrc.json` - ESLint configuration
-- `.prettierrc` - Prettier configuration
-
 ## API Documentation
 
-### Simple Backend API
+All endpoints require API key authentication via the `x-api-key` header.
 
-A simple backend API built with Cloudflare Workers.
+### Measurement Endpoint
 
-#### Features
+#### POST /measurement
+Submit IoT device measurements.
 
-- API Key Authentication using Cloudflare KV
-- Static file serving from `/public` directory
-- Multiple endpoints for different functionalities
-
-#### Authentication
-
-All endpoints require API key authentication. Include your API key in the request headers:
-
+Request:
+```json
+{
+  "device": {
+    "id": "device-001",
+    "type": "temperature-sensor"
+  },
+  "readings": {
+    "temperature": 22.5,
+    "humidity": 45
+  },
+  "metadata": {
+    "location": "room-1"
+  }
+}
 ```
-x-api-key: your-api-key
+
+Validation:
+- Temperature: -273.15°C to 1000°C
+- Humidity: 0% to 100%
+- Required fields: device.id, device.type, readings.temperature
+
+Response (201 Created):
+```json
+{
+  "message": "Measurement recorded successfully",
+  "timestamp": "2025-01-04T21:49:39.693Z"
+}
 ```
 
-#### Endpoints
+### Health Check Endpoint
 
-##### GET /time
-Returns the current time in ISO format.
-
-##### GET /date
-Returns the current date in local format.
-
-##### GET /version
-Returns the current API version.
-
-##### GET /health
-Returns detailed health status of the API and its dependencies.
-
-Request headers:
-```
-x-api-key: your-api-key
-```
+#### GET /health
+Returns detailed system health status.
 
 Response:
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-01-04T19:02:00Z",
-  "version": "4.0.0",
-  "uptime": 3600,
+  "timestamp": "2025-01-04T21:46:08.710Z",
+  "version": "4.0.1",
   "dependencies": {
     "influxdb": {
       "status": "healthy",
-      "latency": 45.2,
+      "latency": 44,
       "message": null
     },
     "kv_store": {
       "status": "healthy",
-      "latency": 12.8,
+      "latency": 395,
       "message": null
     }
   },
   "system": {
-    "memory": {
-      "heap": {
-        "used": {
-          "value": 4194304,
-          "unit": "bytes"
-        },
-        "total": {
-          "value": 8388608,
-          "unit": "bytes"
-        },
-        "percentage": 50.0
-      },
-      "rss": {
-        "value": 16777216,
-        "unit": "bytes"
-      }
-    },
-    "cpu": {
-      "usage": {
-        "user": {
-          "value": 1000000,
-          "unit": "microseconds"
-        },
-        "system": {
-          "value": 500000,
-          "unit": "microseconds"
-        }
-      }
+    "memory_usage": {
+      "total": 536870912,
+      "used": 134217728,
+      "free": 402653184
     }
   }
 }
 ```
 
 Status Codes:
-- `200 OK`: System is healthy or degraded
-- `503 Service Unavailable`: System is unhealthy
-- `401 Unauthorized`: Missing or invalid API key
+- 200: System healthy/degraded
+- 503: System unhealthy
+- 401: Unauthorized
 
-System Status:
-- `healthy`: All systems operating normally
-- `degraded`: System is operational but some metrics are concerning
-  - High latency (InfluxDB > 1000ms, KV > 500ms)
-  - High memory usage (>90% heap used)
-- `unhealthy`: One or more critical systems are failing
-  - InfluxDB connection failure
-  - KV store read/write failure
+Health Status Criteria:
+- Healthy: All systems normal
+- Degraded: High latency or resource usage
+- Unhealthy: Critical system failure
 
-Dependencies:
-- `influxdb`: Status of InfluxDB connection
-  - Performs ping test
-  - Measures response latency
-- `kv_store`: Status of Cloudflare KV store
-  - Tests read/write operations
-  - Measures operation latency
+### Metrics Endpoint
 
-System Metrics:
-- Memory usage (heap and RSS)
-- CPU usage (user and system time)
-- Process uptime
-- API version
-
-##### GET /metrics
-Returns detailed system metrics including memory, CPU, and uptime information.
-
-Request headers:
-```
-x-api-key: your-api-key
-```
+#### GET /metrics
+Returns detailed system metrics with performance data.
 
 Response:
 ```json
 {
-  "timestamp": "2025-01-04T18:56:30Z",
+  "timestamp": "2025-01-04T21:54:48.441Z",
+  "version": "4.0.1",
   "system": {
-    "uptime": {
-      "value": 3600,
-      "unit": "seconds"
+    "memory_usage": {
+      "total": 536870912,
+      "used": 134217728,
+      "free": 402653184
+    }
+  },
+  "dependencies": {
+    "influxdb": {
+      "status": "healthy",
+      "latency": 149
     },
-    "memory": {
-      "heap": {
-        "used": {
-          "value": 4194304,
-          "unit": "bytes"
-        },
-        "total": {
-          "value": 8388608,
-          "unit": "bytes"
-        }
-      },
-      "rss": {
-        "value": 16777216,
-        "unit": "bytes"
-      }
-    },
-    "cpu": {
-      "usage": {
-        "user": {
-          "value": 1000000,
-          "unit": "microseconds"
-        },
-        "system": {
-          "value": 500000,
-          "unit": "microseconds"
-        }
+    "kv_store": {
+      "status": "healthy",
+      "latency": 411
+    }
+  },
+  "requests": {
+    "total": 20,
+    "success": 9,
+    "error": 11,
+    "by_endpoint": {
+      "/measurement": {
+        "total": 11,
+        "success": 3,
+        "error": 8,
+        "avg_latency": 0
       }
     }
   }
 }
 ```
 
-##### POST /measurement
-Stores IoT device measurements in InfluxDB Cloud.
+### Utility Endpoints
 
-Request headers:
+#### GET /time
+Returns current time in ISO format.
+
+#### GET /date
+Returns current date in local format.
+
+#### GET /version
+Returns API version information.
+
+## Performance Optimizations
+
+The API includes several performance optimizations:
+
+1. **Caching**:
+   - In-memory cache for metrics (10s TTL)
+   - Optimized KV store operations
+
+2. **Parallel Operations**:
+   - Concurrent metrics recording
+   - Parallel data fetching
+
+3. **Efficient Queries**:
+   - Optimized InfluxDB queries
+   - Batch KV operations
+
+4. **Error Handling**:
+   - Graceful degradation
+   - Detailed error reporting
+   - Type-safe operations
+
+## Security
+
+- API key authentication required for all endpoints
+- Request validation and sanitization
+- Secure error messages
+- Rate limiting (100 requests per minute per API key)
+
+## Rate Limiting
+
+The API implements a sliding window rate limiting mechanism to prevent abuse and ensure fair usage.
+
+### Configuration
+
+- **Limit**: 100 requests per minute per API key
+- **Window Size**: 60 seconds (sliding window)
+- **Tracking**: Uses Cloudflare KV store for request counting
+- **Reset**: Automatic reset after the window expires
+
+### Rate Limit Headers
+
+Every API response includes the following headers:
+
 ```
-x-api-key: your-api-key
-Content-Type: application/json
+X-RateLimit-Limit: Maximum requests allowed per window
+X-RateLimit-Remaining: Remaining requests in current window
+X-RateLimit-Reset: Unix timestamp when the current window expires
 ```
 
-Request body:
-```json
-{
-  "device": {
-    "id": "string",
-    "type": "string"
-  },
-  "readings": {
-    "temperature": number,
-    "humidity": number
-  },
-  "metadata": {
-    "timestamp": "string (optional, ISO format)",
-    "location": "string (optional)"
+### Rate Limit Exceeded Response
+
+When rate limit is exceeded, the API returns:
+
+- Status: `429 Too Many Requests`
+- Headers:
+  ```
+  Content-Type: application/json
+  X-RateLimit-Limit: 100
+  X-RateLimit-Remaining: 0
+  X-RateLimit-Reset: <timestamp>
+  Retry-After: 60
+  ```
+- Body:
+  ```json
+  {
+    "error": "Too Many Requests",
+    "message": "Rate limit exceeded. Please try again later."
   }
-}
-```
+  ```
 
-Response:
-- 201: Measurement stored successfully
-- 401: Unauthorized (missing or invalid API key)
-- 405: Method not allowed
-- 500: Error storing measurement
+### Testing Rate Limiting
 
-Example request:
-```json
-{
-  "device": {
-    "id": "sensor001",
-    "type": "DHT22"
-  },
-  "readings": {
-    "temperature": 23.5,
-    "humidity": 65.2
-  },
-  "metadata": {
-    "timestamp": "2025-01-04T18:40:24Z",
-    "location": "living-room"
-  }
-}
-```
+You can test the rate limiting using cURL or PowerShell:
 
-#### Static Files
+1. **Add a test API key** (if not already added):
+   ```bash
+   wrangler kv:key put --binding=API_KEYS "test_key_for_rate_limit" "true"
+   ```
 
-Static files are served from the `/public` directory. Current static files:
-- `robots.txt` - Robots exclusion standard file
-- `favicon.ico` - Website favicon
+2. **Make a single request**:
+   ```bash
+   curl -i -X GET https://simple-backend.veilands.workers.dev/metrics \
+        -H "x-api-key: test_key_for_rate_limit"
+   ```
+   Check the rate limit headers in the response.
 
-#### Versioning
-This API follows semantic versioning (SemVer):
-- Major version (X.0.0): Breaking changes that may require client updates
-- Minor version (0.X.0): New features (backward compatible)
-- Patch version (0.0.X): Bug fixes and minor improvements (backward compatible)
+3. **Test rate limiting**:
+   ```powershell
+   # PowerShell script to make multiple requests
+   for ($i=1; $i -le 102; $i++) {
+       $headers = @{'x-api-key'='test_key_for_rate_limit'}
+       $response = Invoke-WebRequest -Uri 'https://simple-backend.veilands.workers.dev/metrics' `
+                                   -Headers $headers -Method GET
+       Write-Host $response.Headers['X-RateLimit-Remaining']
+       Start-Sleep -Milliseconds 100
+   }
+   ```
 
-Version changes are automated based on commit message prefixes:
+   You should observe:
+   - Rate limit counter decreasing with each request
+   - 429 response when limit is exceeded
+   - Counter reset after the window expires
 
-##### Breaking Changes (Major Version)
-```
-feat!: major change
-feat(scope)!: scoped major change
-feat: regular change
+### Implementation Details
 
-BREAKING CHANGE: description of breaking change
-```
+The rate limiting uses a sliding window algorithm:
 
-##### New Features (Minor Version)
-```
-feat: add new endpoint
-feat(scope): add feature to specific scope
-feature: alternative prefix
-```
+1. **Window Management**:
+   - Each request is tracked in a 60-second window
+   - Windows slide smoothly to prevent request spikes at boundaries
 
-##### Bug Fixes and Updates (Patch Version)
-```
-fix: bug fix
-docs: documentation update
-chore: maintenance
-style: formatting
-refactor: code restructuring
-test: adding tests
-```
+2. **Request Counting**:
+   - Current window: Full weight for requests
+   - Previous window: Weighted based on overlap
+   - Total = current + (previous * overlap_percentage)
 
-Example commit messages:
-- `feat(auth)!: require API key for all endpoints`
-- `feat(metrics): add CPU usage tracking`
-- `fix: correct temperature calculation`
-- `docs: update API documentation`
+3. **Storage**:
+   - Uses Cloudflare KV for distributed counting
+   - Keys auto-expire after 2x window size
+   - Format: `ratelimit:{api_key}:{window_timestamp}`
 
-## Scripts
+4. **Graceful Degradation**:
+   - If rate limit checking fails, requests are allowed
+   - Failures are logged for monitoring
+   - KV store errors don't impact API availability
 
-- `npm run dev` - Start development server
-- `npm run build` - Build the project
-- `npm run deploy` - Deploy to Cloudflare Workers
+### Best Practices
+
+1. **Client Implementation**:
+   - Always check rate limit headers
+   - Implement exponential backoff when limit exceeded
+   - Use Retry-After header to schedule retries
+
+2. **Error Handling**:
+   - Handle 429 responses gracefully
+   - Respect Retry-After header
+   - Implement request queuing if needed
+
+## Monitoring
+
+The system provides comprehensive monitoring through:
+- Real-time health checks
+- Detailed metrics tracking
+- Performance monitoring
+- Error tracking
+- Resource usage monitoring
+
+## Error Handling
+
+All endpoints return appropriate HTTP status codes:
+- 200: Success
+- 201: Created
+- 400: Bad Request (invalid data)
+- 401: Unauthorized
+- 404: Not Found
+- 405: Method Not Allowed
+- 500: Internal Server Error
+- 503: Service Unavailable
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+MIT License - see LICENSE file for details
