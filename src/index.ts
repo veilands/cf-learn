@@ -147,6 +147,10 @@ async function handleMetrics(request: Request): Promise<Response> {
   const metrics = {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
+    cpu: {
+      user: process.cpuUsage().user,
+      system: process.cpuUsage().system
+    },
     timestamp: new Date().toISOString()
   };
   

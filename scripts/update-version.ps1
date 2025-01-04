@@ -12,6 +12,8 @@ $major = [int]$versionParts[0]
 $minor = [int]$versionParts[1]
 $patch = [int]$versionParts[2]
 
+Write-Host "Analyzing commit message: $commitMessage"
+
 # Determine version increment based on commit message
 if ($commitMessage -match "^feat!:" -or $commitMessage -match "BREAKING CHANGE:") {
     # Major version bump
@@ -19,7 +21,7 @@ if ($commitMessage -match "^feat!:" -or $commitMessage -match "BREAKING CHANGE:"
     $minor = 0
     $patch = 0
     Write-Host "Breaking change detected - bumping major version"
-} elseif ($commitMessage -match "^feat:" -or $commitMessage -match "^feature:") {
+} elseif ($commitMessage -match "^feat(\(.*\))?:" -or $commitMessage -match "^feature(\(.*\))?:") {
     # Minor version bump
     $minor++
     $patch = 0
