@@ -143,7 +143,18 @@ async function handleHealthCheck(request: Request, env: Env): Promise<Response> 
   });
 }
 
-async function handleMetrics(request: Request): Promise<Response> {
+// Breaking change: require authentication for metrics
+async function handleMetrics(request: Request, env: Env): Promise<Response> {
+  const apiKey = request.headers.get('x-api-key');
+  if (!apiKey) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const isValidKey = await env.API_KEYS.get(apiKey);
+  if (!isValidKey) {
+    return new Response('Invalid API key', { status: 401 });
+  }
+
   const metrics = {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
