@@ -1,3 +1,6 @@
+# Get the commit message from git
+$commitMessage = git log -1 --pretty=%B
+
 # Read the current version
 $versionFile = "src/version.json"
 $versionContent = Get-Content $versionFile | ConvertFrom-Json
@@ -9,8 +12,23 @@ $major = [int]$versionParts[0]
 $minor = [int]$versionParts[1]
 $patch = [int]$versionParts[2]
 
-# Increment minor version
-$newVersion = "$major.$($minor + 1).$patch"
+# Determine version increment based on commit message
+if ($commitMessage -match "BREAKING CHANGE|!:") {
+    # Major version bump
+    $major++
+    $minor = 0
+    $patch = 0
+} elseif ($commitMessage -match "feat:|feature:") {
+    # Minor version bump
+    $minor++
+    $patch = 0
+} else {
+    # Patch version bump
+    $patch++
+}
+
+# Create new version string
+$newVersion = "$major.$minor.$patch"
 
 # Update version.json
 $newContent = @{
@@ -21,3 +39,5 @@ Set-Content $versionFile $newContent
 
 # Add the updated version file to git
 git add $versionFile
+
+Write-Host "Version updated from $currentVersion to $newVersion"
