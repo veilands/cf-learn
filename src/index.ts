@@ -45,6 +45,9 @@ async function handleRequest(request: Request): Promise<Response> {
   if (url.pathname === '/measurement') {
     return handleMeasurementRequest(request);
   }
+  if (url.pathname === '/health') {
+    return handleHealthCheck(request);
+  }
   return new Response('Hello, World!', {
     headers: { 'content-type': 'text/plain' },
   });
@@ -105,4 +108,11 @@ humidity,device=${measurement.device_id} value=${measurement.humidity} ${Date.pa
   } catch (error) {
     return new Response(`Error storing measurement: ${error.message}`, { status: 500 });
   }
+}
+
+async function handleHealthCheck(request: Request): Promise<Response> {
+  return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
+    headers: { 'Content-Type': 'application/json' },
+    status: 200
+  });
 }
