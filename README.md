@@ -52,6 +52,80 @@ npm run deploy
 - `.eslintrc.json` - ESLint configuration
 - `.prettierrc` - Prettier configuration
 
+## API Documentation
+
+### Simple Backend API
+
+A simple backend API built with Cloudflare Workers.
+
+#### Features
+
+- API Key Authentication using Cloudflare KV
+- Static file serving from `/public` directory
+- Multiple endpoints for different functionalities
+
+#### Authentication
+
+All endpoints require API key authentication. Include your API key in the request headers:
+
+```
+x-api-key: your-api-key
+```
+
+#### Endpoints
+
+##### GET /time
+Returns the current time in ISO format.
+
+##### GET /date
+Returns the current date in local format.
+
+##### GET /version
+Returns the current API version.
+
+#### Static Files
+
+Static files are served from the `/public` directory. Current static files:
+- `robots.txt` - Robots exclusion standard file
+- `favicon.ico` - Website favicon
+
+#### Development
+
+##### Prerequisites
+
+- Node.js
+- Wrangler CLI (`npm install -g wrangler`)
+
+##### Setup
+
+1. Clone the repository
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Configure Wrangler:
+- Update `wrangler.toml` with your account details
+- Set up KV namespace for API keys
+
+#### Deployment
+
+Deploy to Cloudflare Workers:
+```bash
+wrangler deploy
+```
+
+#### API Key Management
+
+API keys are stored in Cloudflare KV. To add a new API key:
+
+1. Access your Cloudflare Dashboard
+2. Navigate to Workers & Pages > KV
+3. Select your API_KEYS namespace
+4. Add a new key-value pair where:
+   - Key: Your API key
+   - Value: `{"valid": true}`
+
 ## Scripts
 
 - `npm run dev` - Start development server
