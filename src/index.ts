@@ -22,6 +22,56 @@ interface Measurement {
   };
 }
 
+interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  timestamp: string;
+  version: string;
+  uptime: number;
+  dependencies: {
+    influxdb: {
+      status: 'healthy' | 'degraded' | 'unhealthy';
+      latency: number;
+      message?: string;
+    };
+    kv_store: {
+      status: 'healthy' | 'degraded' | 'unhealthy';
+      latency: number;
+      message?: string;
+    };
+  };
+  system: {
+    memory: {
+      heap: {
+        used: {
+          value: number;
+          unit: string;
+        };
+        total: {
+          value: number;
+          unit: string;
+        };
+        percentage: number;
+      };
+      rss: {
+        value: number;
+        unit: string;
+      };
+    };
+    cpu: {
+      usage: {
+        user: {
+          value: number;
+          unit: string;
+        };
+        system: {
+          value: number;
+          unit: string;
+        };
+      };
+    };
+  };
+}
+
 addEventListener('fetch', (event) => {
   event.respondWith(handleRequest(event.request));
 });
@@ -125,7 +175,92 @@ humidity,device_id=${data.device.id},device_type=${data.device.type} value=${dat
   }
 }
 
-// Breaking change: require authentication for health check
+async function checkInfluxDB(env: Env): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; latency: number; message?: string }> {
+  const start = performance.now();
+  try {
+    const response = await fetch(`${env.INFLUXDB_URL}/api/v2/ping`, {
+      headers: {
+        'Authorization': `Token ${env.INFLUXDB_TOKEN}`
+      }
+    });
+
+    const latency = performance.now() - start;
+
+    if (!response.ok) {
+      return {
+        status: 'unhealthy',
+        latency,
+        message: `InfluxDB responded with status: ${response.status}`
+      };
+    }
+
+    if (latency > 1000) {
+      return {
+        status: 'degraded',
+        latency,
+        message: 'High latency detected'
+      };
+    }
+
+    return {
+      status: 'healthy',
+      latency
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      latency: performance.now() - start,
+      message: error.message
+    };
+  }
+}
+
+async function checkKVStore(env: Env): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; latency: number; message?: string }> {
+  const start = performance.now();
+  try {
+    const testKey = 'health_check_test';
+    const testValue = Date.now().toString();
+
+    // Test write
+    await env.API_KEYS.put(testKey, testValue);
+    
+    // Test read
+    const readValue = await env.API_KEYS.get(testKey);
+    
+    // Test delete
+    await env.API_KEYS.delete(testKey);
+
+    const latency = performance.now() - start;
+
+    if (readValue !== testValue) {
+      return {
+        status: 'unhealthy',
+        latency,
+        message: 'KV store read/write mismatch'
+      };
+    }
+
+    if (latency > 500) {
+      return {
+        status: 'degraded',
+        latency,
+        message: 'High latency detected'
+      };
+    }
+
+    return {
+      status: 'healthy',
+      latency
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      latency: performance.now() - start,
+      message: error.message
+    };
+  }
+}
+
 async function handleHealthCheck(request: Request, env: Env): Promise<Response> {
   const apiKey = request.headers.get('x-api-key');
   if (!apiKey) {
@@ -137,13 +272,69 @@ async function handleHealthCheck(request: Request, env: Env): Promise<Response> 
     return new Response('Invalid API key', { status: 401 });
   }
 
-  return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
+  const [influxStatus, kvStatus] = await Promise.all([
+    checkInfluxDB(env),
+    checkKVStore(env)
+  ]);
+
+  const memory = process.memoryUsage();
+  const heapUsedPercentage = (memory.heapUsed / memory.heapTotal) * 100;
+
+  const healthStatus: HealthStatus = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: API_VERSION,
+    uptime: process.uptime(),
+    dependencies: {
+      influxdb: influxStatus,
+      kv_store: kvStatus
+    },
+    system: {
+      memory: {
+        heap: {
+          used: {
+            value: memory.heapUsed,
+            unit: 'bytes'
+          },
+          total: {
+            value: memory.heapTotal,
+            unit: 'bytes'
+          },
+          percentage: heapUsedPercentage
+        },
+        rss: {
+          value: memory.rss,
+          unit: 'bytes'
+        }
+      },
+      cpu: {
+        usage: {
+          user: {
+            value: process.cpuUsage().user,
+            unit: 'microseconds'
+          },
+          system: {
+            value: process.cpuUsage().system,
+            unit: 'microseconds'
+          }
+        }
+      }
+    }
+  };
+
+  // Determine overall status
+  if (influxStatus.status === 'unhealthy' || kvStatus.status === 'unhealthy') {
+    healthStatus.status = 'unhealthy';
+  } else if (influxStatus.status === 'degraded' || kvStatus.status === 'degraded' || heapUsedPercentage > 90) {
+    healthStatus.status = 'degraded';
+  }
+
+  return new Response(JSON.stringify(healthStatus, null, 2), {
     headers: { 'Content-Type': 'application/json' },
-    status: 200
+    status: healthStatus.status === 'unhealthy' ? 503 : 200
   });
 }
 
-// Breaking change: restructure metrics response format
 async function handleMetrics(request: Request, env: Env): Promise<Response> {
   const apiKey = request.headers.get('x-api-key');
   if (!apiKey) {

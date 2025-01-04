@@ -84,7 +84,7 @@ Returns the current date in local format.
 Returns the current API version.
 
 ##### GET /health
-Returns the API health status.
+Returns detailed health status of the API and its dependencies.
 
 Request headers:
 ```
@@ -95,9 +95,82 @@ Response:
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-01-04T18:40:24Z"
+  "timestamp": "2025-01-04T19:02:00Z",
+  "version": "4.0.0",
+  "uptime": 3600,
+  "dependencies": {
+    "influxdb": {
+      "status": "healthy",
+      "latency": 45.2,
+      "message": null
+    },
+    "kv_store": {
+      "status": "healthy",
+      "latency": 12.8,
+      "message": null
+    }
+  },
+  "system": {
+    "memory": {
+      "heap": {
+        "used": {
+          "value": 4194304,
+          "unit": "bytes"
+        },
+        "total": {
+          "value": 8388608,
+          "unit": "bytes"
+        },
+        "percentage": 50.0
+      },
+      "rss": {
+        "value": 16777216,
+        "unit": "bytes"
+      }
+    },
+    "cpu": {
+      "usage": {
+        "user": {
+          "value": 1000000,
+          "unit": "microseconds"
+        },
+        "system": {
+          "value": 500000,
+          "unit": "microseconds"
+        }
+      }
+    }
+  }
 }
 ```
+
+Status Codes:
+- `200 OK`: System is healthy or degraded
+- `503 Service Unavailable`: System is unhealthy
+- `401 Unauthorized`: Missing or invalid API key
+
+System Status:
+- `healthy`: All systems operating normally
+- `degraded`: System is operational but some metrics are concerning
+  - High latency (InfluxDB > 1000ms, KV > 500ms)
+  - High memory usage (>90% heap used)
+- `unhealthy`: One or more critical systems are failing
+  - InfluxDB connection failure
+  - KV store read/write failure
+
+Dependencies:
+- `influxdb`: Status of InfluxDB connection
+  - Performs ping test
+  - Measures response latency
+- `kv_store`: Status of Cloudflare KV store
+  - Tests read/write operations
+  - Measures operation latency
+
+System Metrics:
+- Memory usage (heap and RSS)
+- CPU usage (user and system time)
+- Process uptime
+- API version
 
 ##### GET /metrics
 Returns detailed system metrics including memory, CPU, and uptime information.
