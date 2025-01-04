@@ -13,7 +13,7 @@ $minor = [int]$versionParts[1]
 $patch = [int]$versionParts[2]
 
 # Determine version increment based on commit message
-if ($commitMessage -match "BREAKING CHANGE" -or $commitMessage -match "!:") {
+if ($commitMessage -match "^feat!:" -or $commitMessage -match "BREAKING CHANGE:") {
     # Major version bump
     $major++
     $minor = 0
