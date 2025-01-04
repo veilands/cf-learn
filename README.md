@@ -83,30 +83,89 @@ Returns the current date in local format.
 ##### GET /version
 Returns the current API version.
 
+##### GET /health
+Returns the API health status.
+
+Request headers:
+```
+x-api-key: your-api-key
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-01-04T18:40:24Z"
+}
+```
+
 ##### POST /measurement
 Stores IoT device measurements in InfluxDB Cloud.
+
+Request headers:
+```
+x-api-key: your-api-key
+Content-Type: application/json
+```
 
 Request body:
 ```json
 {
-  "device_id": "string",
-  "temperature": number,
-  "humidity": number,
-  "timestamp": "string" (optional, ISO format)
+  "device": {
+    "id": "string",
+    "type": "string"
+  },
+  "readings": {
+    "temperature": number,
+    "humidity": number
+  },
+  "metadata": {
+    "timestamp": "string (optional, ISO format)",
+    "location": "string (optional)"
+  }
 }
 ```
 
 Response:
 - 201: Measurement stored successfully
-- 401: Unauthorized
+- 401: Unauthorized (missing or invalid API key)
 - 405: Method not allowed
 - 500: Error storing measurement
+
+Example request:
+```json
+{
+  "device": {
+    "id": "sensor001",
+    "type": "DHT22"
+  },
+  "readings": {
+    "temperature": 23.5,
+    "humidity": 65.2
+  },
+  "metadata": {
+    "timestamp": "2025-01-04T18:40:24Z",
+    "location": "living-room"
+  }
+}
+```
 
 #### Static Files
 
 Static files are served from the `/public` directory. Current static files:
 - `robots.txt` - Robots exclusion standard file
 - `favicon.ico` - Website favicon
+
+#### Versioning
+This API follows semantic versioning (SemVer):
+- Major version (X.0.0): Breaking changes
+- Minor version (0.X.0): New features (backward compatible)
+- Patch version (0.0.X): Bug fixes (backward compatible)
+
+Version changes are automated based on commit messages:
+- Breaking changes: `feat!:` or `BREAKING CHANGE` in commit message
+- New features: `feat:` or `feature:` prefix
+- Bug fixes: All other commits
 
 #### Development
 

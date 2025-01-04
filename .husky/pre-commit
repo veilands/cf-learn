@@ -1,4 +1,2 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
-powershell ./scripts/update-version.ps1
+#!/bin/sh
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-version.ps1
