@@ -143,7 +143,7 @@ async function handleHealthCheck(request: Request, env: Env): Promise<Response> 
   });
 }
 
-// Breaking change: require authentication for metrics
+// Breaking change: restructure metrics response format
 async function handleMetrics(request: Request, env: Env): Promise<Response> {
   const apiKey = request.headers.get('x-api-key');
   if (!apiKey) {
@@ -156,16 +156,44 @@ async function handleMetrics(request: Request, env: Env): Promise<Response> {
   }
 
   const metrics = {
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    cpu: {
-      user: process.cpuUsage().user,
-      system: process.cpuUsage().system
-    },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    system: {
+      uptime: {
+        value: process.uptime(),
+        unit: 'seconds'
+      },
+      memory: {
+        heap: {
+          used: {
+            value: process.memoryUsage().heapUsed,
+            unit: 'bytes'
+          },
+          total: {
+            value: process.memoryUsage().heapTotal,
+            unit: 'bytes'
+          }
+        },
+        rss: {
+          value: process.memoryUsage().rss,
+          unit: 'bytes'
+        }
+      },
+      cpu: {
+        usage: {
+          user: {
+            value: process.cpuUsage().user,
+            unit: 'microseconds'
+          },
+          system: {
+            value: process.cpuUsage().system,
+            unit: 'microseconds'
+          }
+        }
+      }
+    }
   };
   
-  return new Response(JSON.stringify(metrics), {
+  return new Response(JSON.stringify(metrics, null, 2), {
     headers: { 'Content-Type': 'application/json' },
     status: 200
   });

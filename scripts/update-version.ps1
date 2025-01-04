@@ -15,7 +15,7 @@ $patch = [int]$versionParts[2]
 Write-Host "Analyzing commit message: $commitMessage"
 
 # Determine version increment based on commit message
-if ($commitMessage -match "^feat!:" -or $commitMessage -match "BREAKING CHANGE:") {
+if ($commitMessage -match "^feat(\(.*\))?!:" -or $commitMessage -match "BREAKING CHANGE:") {
     # Major version bump
     $major++
     $minor = 0
