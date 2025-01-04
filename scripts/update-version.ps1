@@ -1,5 +1,5 @@
 # Get the commit message from git
-$commitMessage = git log -1 --pretty=%B
+$commitMessage = git log -1 HEAD --pretty=%B
 
 # Read the current version
 $versionFile = "src/version.json"
@@ -13,18 +13,21 @@ $minor = [int]$versionParts[1]
 $patch = [int]$versionParts[2]
 
 # Determine version increment based on commit message
-if ($commitMessage -match "BREAKING CHANGE|!:") {
+if ($commitMessage -match "BREAKING CHANGE" -or $commitMessage -match "!:") {
     # Major version bump
     $major++
     $minor = 0
     $patch = 0
-} elseif ($commitMessage -match "feat:|feature:") {
+    Write-Host "Breaking change detected - bumping major version"
+} elseif ($commitMessage -match "^feat:" -or $commitMessage -match "^feature:") {
     # Minor version bump
     $minor++
     $patch = 0
+    Write-Host "New feature detected - bumping minor version"
 } else {
     # Patch version bump
     $patch++
+    Write-Host "Patch update detected - bumping patch version"
 }
 
 # Create new version string

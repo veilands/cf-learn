@@ -8,10 +8,18 @@ import { version } from './version.json';
 const API_VERSION = version;
 
 interface Measurement {
-  device_id: string;
-  temperature: number;
-  humidity: number;
-  timestamp?: string;
+  device: {
+    id: string;
+    type: string;
+  };
+  readings: {
+    temperature: number;
+    humidity: number;
+  };
+  metadata: {
+    timestamp?: string;
+    location?: string;
+  };
 }
 
 addEventListener('fetch', (event) => {
@@ -78,30 +86,34 @@ async function handleMeasurementRequest(request: Request): Promise<Response> {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  const apiKey = request.headers.get('x-api-key');
+  if (!apiKey) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const isValidKey = await API_KEYS.get(apiKey);
+  if (!isValidKey) {
+    return new Response('Invalid API key', { status: 401 });
+  }
+
   try {
-    const measurement: Measurement = await request.json();
-    
-    // Add timestamp if not provided
-    if (!measurement.timestamp) {
-      measurement.timestamp = new Date().toISOString();
-    }
+    const data: Measurement = await request.json();
+    const timestamp = data.metadata.timestamp || new Date().toISOString();
 
-    // Construct InfluxDB Line Protocol
-    const lineProtocol = `temperature,device=${measurement.device_id} value=${measurement.temperature} ${Date.parse(measurement.timestamp) * 1000000}
-humidity,device=${measurement.device_id} value=${measurement.humidity} ${Date.parse(measurement.timestamp) * 1000000}`;
+    const measurement = `temperature,device_id=${data.device.id},device_type=${data.device.type} value=${data.readings.temperature} ${Date.parse(timestamp) * 1000000}
+humidity,device_id=${data.device.id},device_type=${data.device.type} value=${data.readings.humidity} ${Date.parse(timestamp) * 1000000}`;
 
-    // Send to InfluxDB
-    const response = await fetch(INFLUXDB_URL + '/api/v2/write?org=' + INFLUXDB_ORG + '&bucket=' + INFLUXDB_BUCKET, {
+    const response = await fetch(`${INFLUXDB_URL}/api/v2/write?org=${INFLUXDB_ORG}&bucket=${INFLUXDB_BUCKET}&precision=ns`, {
       method: 'POST',
       headers: {
         'Authorization': `Token ${INFLUXDB_TOKEN}`,
-        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Type': 'text/plain',
       },
-      body: lineProtocol,
+      body: measurement,
     });
 
     if (!response.ok) {
-      throw new Error(`InfluxDB responded with status: ${response.status}`);
+      throw new Error(`InfluxDB responded with ${response.status}: ${await response.text()}`);
     }
 
     return new Response('Measurement stored successfully', { status: 201 });
