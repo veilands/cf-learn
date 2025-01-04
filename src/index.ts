@@ -110,7 +110,18 @@ humidity,device=${measurement.device_id} value=${measurement.humidity} ${Date.pa
   }
 }
 
-async function handleHealthCheck(request: Request): Promise<Response> {
+// Breaking change: require authentication for health check
+async function handleHealthCheck(request: Request, env: Env): Promise<Response> {
+  const apiKey = request.headers.get('x-api-key');
+  if (!apiKey) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  const isValidKey = await env.API_KEYS.get(apiKey);
+  if (!isValidKey) {
+    return new Response('Invalid API key', { status: 401 });
+  }
+
   return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
     headers: { 'Content-Type': 'application/json' },
     status: 200
