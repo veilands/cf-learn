@@ -109,35 +109,40 @@ graph TD
 
 ```mermaid
 graph TD
-    subgraph External Services
+    subgraph External
         IDB[InfluxDB]
         KV[KV Store]
     end
     
-    subgraph Core Services
-        Health[Health Service]
-        Metrics[Metrics Service]
-        Logger[Logger Service]
-        RateLimit[Rate Limiter]
+    subgraph Core
+        HS[Health Service]
+        MS[Metrics Service]
+        LS[Logger Service]
+        RL[Rate Limiter]
     end
     
-    subgraph Request Handling
-        Router[Request Router]
-        Auth[Authentication]
-        Validation[Request Validation]
-        Handler[Request Handler]
+    subgraph Handlers
+        RT[Request Router]
+        AU[Authentication]
+        VA[Request Validation]
+        RH[Request Handler]
     end
     
-    Router -->|Route| Handler
-    Handler -->|Check| Auth
-    Handler -->|Validate| Validation
-    Handler -->|Check| RateLimit
-    Handler -->|Use| Core Services
-    Core Services -->|Use| External Services
-
-    style External Services fill:#f9f,stroke:#333,stroke-width:4px
-    style Core Services fill:#bbf,stroke:#333,stroke-width:4px
-    style Request Handling fill:#bfb,stroke:#333,stroke-width:4px
+    RT --> RH
+    RH --> AU
+    RH --> VA
+    RH --> RL
+    RH --> HS
+    RH --> MS
+    RH --> LS
+    
+    HS --> IDB
+    MS --> KV
+    RL --> KV
+    
+    style External fill:#f9f,stroke:#333,stroke-width:4px
+    style Core fill:#bbf,stroke:#333,stroke-width:4px
+    style Handlers fill:#bfb,stroke:#333,stroke-width:4px
 ```
 
 ## System States
@@ -163,4 +168,3 @@ stateDiagram-v2
         [*] --> LogError
         LogError --> PrepareErrorResponse
     }
-```
