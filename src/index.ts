@@ -56,6 +56,9 @@ async function handleRequest(request: Request): Promise<Response> {
   if (url.pathname === '/health') {
     return handleHealthCheck(request);
   }
+  if (url.pathname === '/metrics') {
+    return handleMetrics(request);
+  }
   return new Response('Hello, World!', {
     headers: { 'content-type': 'text/plain' },
   });
@@ -135,6 +138,19 @@ async function handleHealthCheck(request: Request, env: Env): Promise<Response> 
   }
 
   return new Response(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }), {
+    headers: { 'Content-Type': 'application/json' },
+    status: 200
+  });
+}
+
+async function handleMetrics(request: Request): Promise<Response> {
+  const metrics = {
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    timestamp: new Date().toISOString()
+  };
+  
+  return new Response(JSON.stringify(metrics), {
     headers: { 'Content-Type': 'application/json' },
     status: 200
   });
