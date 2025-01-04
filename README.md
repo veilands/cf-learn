@@ -99,6 +99,55 @@ Response:
 }
 ```
 
+##### GET /metrics
+Returns detailed system metrics including memory, CPU, and uptime information.
+
+Request headers:
+```
+x-api-key: your-api-key
+```
+
+Response:
+```json
+{
+  "timestamp": "2025-01-04T18:56:30Z",
+  "system": {
+    "uptime": {
+      "value": 3600,
+      "unit": "seconds"
+    },
+    "memory": {
+      "heap": {
+        "used": {
+          "value": 4194304,
+          "unit": "bytes"
+        },
+        "total": {
+          "value": 8388608,
+          "unit": "bytes"
+        }
+      },
+      "rss": {
+        "value": 16777216,
+        "unit": "bytes"
+      }
+    },
+    "cpu": {
+      "usage": {
+        "user": {
+          "value": 1000000,
+          "unit": "microseconds"
+        },
+        "system": {
+          "value": 500000,
+          "unit": "microseconds"
+        }
+      }
+    }
+  }
+}
+```
+
 ##### POST /measurement
 Stores IoT device measurements in InfluxDB Cloud.
 
@@ -158,51 +207,43 @@ Static files are served from the `/public` directory. Current static files:
 
 #### Versioning
 This API follows semantic versioning (SemVer):
-- Major version (X.0.0): Breaking changes
+- Major version (X.0.0): Breaking changes that may require client updates
 - Minor version (0.X.0): New features (backward compatible)
-- Patch version (0.0.X): Bug fixes (backward compatible)
+- Patch version (0.0.X): Bug fixes and minor improvements (backward compatible)
 
-Version changes are automated based on commit messages:
-- Breaking changes: `feat!:` or `BREAKING CHANGE` in commit message
-- New features: `feat:` or `feature:` prefix
-- Bug fixes: All other commits
+Version changes are automated based on commit message prefixes:
 
-#### Development
+##### Breaking Changes (Major Version)
+```
+feat!: major change
+feat(scope)!: scoped major change
+feat: regular change
 
-##### Prerequisites
-
-- Node.js
-- Wrangler CLI (`npm install -g wrangler`)
-
-##### Setup
-
-1. Clone the repository
-2. Install dependencies:
-```bash
-npm install
+BREAKING CHANGE: description of breaking change
 ```
 
-3. Configure Wrangler:
-- Update `wrangler.toml` with your account details
-- Set up KV namespace for API keys
-
-#### Deployment
-
-Deploy to Cloudflare Workers:
-```bash
-wrangler deploy
+##### New Features (Minor Version)
+```
+feat: add new endpoint
+feat(scope): add feature to specific scope
+feature: alternative prefix
 ```
 
-#### API Key Management
+##### Bug Fixes and Updates (Patch Version)
+```
+fix: bug fix
+docs: documentation update
+chore: maintenance
+style: formatting
+refactor: code restructuring
+test: adding tests
+```
 
-API keys are stored in Cloudflare KV. To add a new API key:
-
-1. Access your Cloudflare Dashboard
-2. Navigate to Workers & Pages > KV
-3. Select your API_KEYS namespace
-4. Add a new key-value pair where:
-   - Key: Your API key
-   - Value: `{"valid": true}`
+Example commit messages:
+- `feat(auth)!: require API key for all endpoints`
+- `feat(metrics): add CPU usage tracking`
+- `fix: correct temperature calculation`
+- `docs: update API documentation`
 
 ## Scripts
 
