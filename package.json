@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "wrangler dev src/index.ts",
     "deploy": "wrangler deploy src/index.ts",
-    "test": "npm run deploy && vitest run",
+    "test": "npm run deploy && vitest run --coverage --coverage.thresholds.branches=80 --coverage.thresholds.functions=80 --coverage.thresholds.lines=80 --coverage.thresholds.statements=80",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "lint": "eslint . --ext .ts",
     "type-check": "tsc --noEmit",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "version:increment": "node scripts/increment-version.js"
   },
   "author": "Toms Veilands",
   "license": "MIT",

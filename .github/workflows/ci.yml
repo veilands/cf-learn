@@ -9,9 +9,12 @@ on:
 jobs:
   test-and-deploy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     
     steps:
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
     
     - name: Use Node.js
       uses: actions/setup-node@v3
@@ -21,7 +24,19 @@ jobs:
     
     - name: Install dependencies
       run: npm ci
+
+    - name: Lint
+      run: npm run lint
       
+    - name: Type check
+      run: npm run type-check
+
+    - name: Increment version
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        npm run version:increment
+        
     - name: Create wrangler.toml
       run: |
         cat > wrangler.toml << EOL
@@ -58,10 +73,20 @@ jobs:
       run: npx wrangler deploy
     
     - name: Run E2E tests
-      run: npm run test
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        API_KEY: my_api_key_12345
+        API_URL: https://simple-backend.veilands.workers.dev
+      run: npm run test -- --coverage --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80,"statements":80}}'
+      timeout-minutes: 5
     
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
       with:
         files: ./coverage/lcov.info
         fail_ci_if_error: true
+
+    - name: Push version update
+      if: github.ref == 'refs/heads/main'
+      run: |
+        git push

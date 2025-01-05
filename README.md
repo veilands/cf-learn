@@ -189,9 +189,10 @@ To enable CI/CD with GitHub Actions, you need to add these secrets to your repos
 
 | Secret Name | Description | How to Get It |
 |------------|-------------|---------------|
-| `CF_API_TOKEN` | Cloudflare API token | Create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) using "Edit Cloudflare Workers" template |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) using "Edit Cloudflare Workers" template |
 | `CF_API_KEYS_ID` | KV namespace ID for API keys | Found in Cloudflare Dashboard > Workers > KV |
 | `CF_METRICS_ID` | KV namespace ID for metrics | Found in Cloudflare Dashboard > Workers > KV |
+| `CF_ZONE_ID` | Zone ID for custom domain | Found in Cloudflare Dashboard > Domain Overview |
 | `INFLUXDB_URL` | Your InfluxDB URL | From your InfluxDB setup |
 | `INFLUXDB_ORG` | Your InfluxDB organization | From your InfluxDB setup |
 | `INFLUXDB_BUCKET` | Your InfluxDB bucket | From your InfluxDB setup |
