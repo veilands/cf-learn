@@ -1,0 +1,24 @@
+name = "simple-backend"
+main = "src/index.ts"
+compatibility_date = "2023-12-18"
+
+# Route configuration
+routes = [
+  { pattern = "api.pasts.dev/*", custom_domain = true }
+]
+
+# KV Namespaces
+kv_namespaces = [
+  { binding = "API_KEYS", id = "your-api-keys-namespace-id" },
+  { binding = "METRICS", id = "your-metrics-namespace-id" }
+]
+
+# Environment variables
+[vars]
+JWT_SECRET = "your-secret-key-change-this-in-production"
+ACCESS_TOKEN_EXPIRES = "1800"  # 30 minutes in seconds
+REFRESH_TOKEN_EXPIRES = "2592000"  # 30 days in seconds
+INFLUXDB_URL = "your-influxdb-url"
+INFLUXDB_TOKEN = "your-influxdb-token"
+INFLUXDB_ORG = "your-org"
+INFLUXDB_BUCKET = "your-bucket"
