@@ -27,16 +27,21 @@ jobs:
         cat > wrangler.toml << EOL
         name = "simple-backend"
         main = "src/index.ts"
-        compatibility_date = "2023-12-18"
+        workers_dev = true
+        compatibility_date = "2024-12-24"
+        assets = { directory = "./public/" }
 
-        routes = [
-          { pattern = "api.pasts.dev/*", custom_domain = true }
-        ]
+        [[routes]]
+        pattern = "https://api.pasts.dev/*"
+        zone_id = "${{ secrets.CF_ZONE_ID }}"
 
-        kv_namespaces = [
-          { binding = "API_KEYS", id = "${{ secrets.CF_API_KEYS_ID }}" },
-          { binding = "METRICS", id = "${{ secrets.CF_METRICS_ID }}" }
-        ]
+        [[kv_namespaces]]
+        binding = "API_KEYS"
+        id = "${{ secrets.CF_API_KEYS_ID }}"
+
+        [[kv_namespaces]]
+        binding = "METRICS"
+        id = "${{ secrets.CF_METRICS_ID }}"
 
         [vars]
         INFLUXDB_URL = "${{ secrets.INFLUXDB_URL }}"
@@ -50,7 +55,7 @@ jobs:
     - name: Deploy to Cloudflare Workers
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      run: npx wrangler deploy src/index.ts
+      run: npx wrangler deploy
     
     - name: Run E2E tests
       run: npm run test
