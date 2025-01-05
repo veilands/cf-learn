@@ -7,37 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  test-and-deploy:
     runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Use Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18.x'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Run unit tests
-      run: npm run test:unit
-    
-    - name: Run integration tests
-      run: npm run test:integration
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./coverage/lcov.info
-        fail_ci_if_error: true
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
     
     steps:
     - uses: actions/checkout@v3
@@ -55,3 +26,12 @@ jobs:
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
       run: npm run deploy
+    
+    - name: Run E2E tests
+      run: npm run test
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage/lcov.info
+        fail_ci_if_error: true
