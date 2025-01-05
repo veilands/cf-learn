@@ -72,12 +72,12 @@ jobs:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       run: npx wrangler deploy
     
-    - name: Run E2E tests
+    - name: Run tests with coverage
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         API_KEY: my_api_key_12345
         API_URL: https://simple-backend.veilands.workers.dev
-      run: npm run test -- --coverage --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80,"statements":80}}'
+      run: npm run test:coverage
       timeout-minutes: 5
     
     - name: Upload coverage reports

@@ -1,14 +1,14 @@
 {
   "name": "cloudflare-auth-api",
-  "version": "1.0.0",
+  "version": "5.4.1",
   "description": "Authentication API built with Cloudflare Workers and TypeScript",
   "main": "dist/index.js",
   "scripts": {
     "dev": "wrangler dev src/index.ts",
     "deploy": "wrangler deploy src/index.ts",
-    "test": "npm run deploy && vitest run --coverage --coverage.thresholds.branches=80 --coverage.thresholds.functions=80 --coverage.thresholds.lines=80 --coverage.thresholds.statements=80",
+    "test": "npm run deploy && vitest run",
+    "test:coverage": "npm run deploy && vitest run --coverage --coverage.thresholds.branches=80 --coverage.thresholds.functions=80 --coverage.thresholds.lines=80 --coverage.thresholds.statements=80",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
     "format": "prettier --write .",
     "lint": "eslint . --ext .ts",
     "type-check": "tsc --noEmit",
