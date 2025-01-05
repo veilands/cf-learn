@@ -22,6 +22,12 @@ interface MeasurementResponse {
   measurement_id: string;
 }
 
+interface ErrorResponse {
+  error: string;
+  message: string;
+  requestId?: string;
+}
+
 describe('API E2E Tests', () => {
   describe('Metrics Endpoint', () => {
     it('should return metrics with valid API key', async () => {
@@ -91,11 +97,11 @@ describe('API E2E Tests', () => {
     it('should reject invalid measurement data', async () => {
       const invalidMeasurement = {
         device: {
-          id: 'test-device'
-          // Missing required type field
+          type: 'sensor'
+          // Missing required id field
         },
         readings: {
-          temperature: 'not-a-number' // Invalid temperature
+          temperature: 25.5
         }
       };
 
@@ -109,7 +115,7 @@ describe('API E2E Tests', () => {
       });
 
       expect(response.status).toBe(400);
-      const data = await response.json();
+      const data = await response.json() as ErrorResponse;
       expect(data.error).toBe('Bad Request');
     });
 
@@ -124,7 +130,7 @@ describe('API E2E Tests', () => {
       });
 
       expect(response.status).toBe(401);
-      const data = await response.json();
+      const data = await response.json() as ErrorResponse;
       expect(data.error).toBe('Unauthorized');
     });
   });

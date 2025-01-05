@@ -1,8 +1,9 @@
 import versionInfo from '../version.json';
 import { validateHttpMethod } from '../middleware/validation';
 import { withCache } from '../middleware/cache';
+import { Env } from '../types';
 
-async function handleVersionRequestInternal(request: Request): Promise<Response> {
+async function handleVersionRequestInternal(request: Request, env: Env): Promise<Response> {
   const requestId = crypto.randomUUID();
   const methodError = validateHttpMethod(request, ['GET'], requestId);
   if (methodError) return methodError;

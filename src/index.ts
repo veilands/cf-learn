@@ -82,7 +82,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           response = await handleDateRequest(request);
           break;
         case '/version':
-          response = await handleVersionRequest(request);
+          response = await handleVersionRequest(request, env);
           break;
         default:
           response = createErrorResponse(
