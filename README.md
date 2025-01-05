@@ -102,6 +102,24 @@ Response:
    npx wrangler secret put INFLUXDB_TOKEN
    ```
 
+### Local Development Setup
+
+1. Copy the example configuration:
+   ```bash
+   cp wrangler.toml.example wrangler.toml
+   ```
+
+2. Update `wrangler.toml` with your values:
+   - Replace KV namespace IDs
+   - Update InfluxDB configuration
+
+3. Set up secrets:
+   ```bash
+   npx wrangler secret put INFLUXDB_TOKEN
+   ```
+
+> Note: Never commit `wrangler.toml` to version control as it may contain sensitive information.
+
 ### Development Commands
 
 - `npm run deploy`: Deploy to Cloudflare Workers

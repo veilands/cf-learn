@@ -41,3 +41,6 @@ out/
 # Cache
 .cache/
 .temp/
+
+# Environment
+wrangler.toml
