@@ -21,11 +21,33 @@ jobs:
     
     - name: Install dependencies
       run: npm ci
+      
+    - name: Create wrangler.toml
+      run: |
+        cat > wrangler.toml << EOL
+        name = "simple-backend"
+        main = "src/index.ts"
+        compatibility_date = "2023-12-18"
+
+        routes = [
+          { pattern = "api.pasts.dev/*", custom_domain = true }
+        ]
+
+        kv_namespaces = [
+          { binding = "API_KEYS", id = "${{ secrets.CF_API_KEYS_ID }}" },
+          { binding = "METRICS", id = "${{ secrets.CF_METRICS_ID }}" }
+        ]
+
+        [vars]
+        INFLUXDB_URL = "${{ secrets.INFLUXDB_URL }}"
+        INFLUXDB_ORG = "${{ secrets.INFLUXDB_ORG }}"
+        INFLUXDB_BUCKET = "${{ secrets.INFLUXDB_BUCKET }}"
+        EOL
     
     - name: Deploy to Cloudflare Workers
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-      run: npm run deploy
+      run: npx wrangler deploy src/index.ts
     
     - name: Run E2E tests
       run: npm run test

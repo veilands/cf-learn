@@ -1,176 +1,167 @@
 # IoT Backend Service
 
-A high-performance IoT backend service built with Cloudflare Workers, featuring real-time data ingestion, rate limiting, and health monitoring.
+A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication and rate limiting.
 
 ## Features
 
-- **Real-time Data Ingestion**: Collect IoT device measurements with InfluxDB integration
-- **Rate Limiting**: Sliding window rate limiting (100 requests/minute per API key)
-- **Health Monitoring**: Real-time health checks for all system components
-- **Metrics Collection**: Track API usage and performance metrics
-- **Structured Logging**: Comprehensive logging system with request tracking
-- **Authentication**: API key-based authentication
-- **Error Handling**: Detailed error responses with request tracing
-- **Validation**: Strict schema validation for all requests
+- 🔐 API Key Authentication
+- 📊 Device Measurements Collection
+- 📈 System Health Metrics
+- ⚡ Rate Limiting
+- 🔄 Automatic Version Updates
+- 📝 Comprehensive Logging
+- 🧪 End-to-End Testing
 
 ## Architecture
 
-Detailed architecture diagrams and documentation can be found in the [Architecture Documentation](docs/architecture.md). The diagrams cover:
-
-- High-Level System Architecture
-- Request Flow and Processing
-- Rate Limiting Design
-- Data Flow and Processing
-- Component Interactions
-- System States
+```mermaid
+graph TD
+    Device[IoT Device] -->|POST /measurement| Worker[Cloudflare Worker]
+    Monitor[Monitoring System] -->|GET /metrics| Worker
+    Worker -->|Store| KV[Cloudflare KV]
+    Worker -->|Write| InfluxDB[InfluxDB]
+    Worker -->|Validate| Auth[API Key Auth]
+    Worker -->|Rate Limit| RateLimit[Rate Limiter]
+```
 
 ## API Endpoints
 
-### Measurement Endpoint
-```http
-POST /measurement
-Content-Type: application/json
-X-API-Key: your-api-key
+### POST /measurement
 
-{
-  "device": {
-    "id": "device-id",
-    "type": "sensor"
-  },
-  "readings": {
-    "temperature": 22.5,
-    "humidity": 45,
-    "battery_voltage": 3.7
-  },
-  "metadata": {
-    "location": "room-1",
-    "timestamp": "2025-01-05T12:00:00Z"
-  }
-}
+Submit device measurements.
+
+```bash
+curl -X POST https://api.example.com/measurement \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your_api_key" \
+  -d '{
+    "device": {
+      "id": "device-123",
+      "type": "sensor"
+    },
+    "readings": {
+      "temperature": 25.5,
+      "humidity": 60
+    }
+  }'
 ```
 
-### Metrics Endpoint
-```http
-GET /metrics
-X-API-Key: your-api-key
+### GET /metrics
+
+Retrieve system metrics.
+
+```bash
+curl https://api.example.com/metrics \
+  -H "x-api-key: your_api_key"
+```
 
 Response:
+```json
 {
-  "timestamp": "2025-01-05T12:00:00Z",
-  "version": "5.2.2",
+  "timestamp": "2025-01-05T13:38:19Z",
+  "version": "5.3.0",
   "status": {
-    "influxdb": {
-      "status": "healthy",
-      "latency": 282
-    },
-    "kv_store": {
-      "status": "healthy",
-      "latency": 226
-    }
+    "influxdb": "healthy",
+    "kv_store": "healthy"
   }
 }
-```
-
-### Health Check
-```http
-GET /health
-X-API-Key: your-api-key
-```
-
-### Time
-```http
-GET /time
-X-API-Key: your-api-key
-```
-
-### Version
-```http
-GET /version
-X-API-Key: your-api-key
-```
-
-## Rate Limiting
-
-The API implements a sliding window rate limit:
-- 100 requests per minute per API key
-- Headers included in response:
-  - `X-RateLimit-Limit`: Maximum requests per window
-  - `X-RateLimit-Remaining`: Remaining requests in current window
-  - `X-RateLimit-Reset`: Time when the rate limit resets
-  - `Retry-After`: Present when rate limit is exceeded
-
-## Validation
-
-All requests are validated using strict schemas:
-- Device measurements must include required fields (id, type, temperature)
-- Optional fields are validated when present (humidity, battery_voltage, location, timestamp)
-- No extra fields are allowed (strict mode)
-- Numbers must be within valid ranges (e.g., battery_voltage between 0-5V)
-- Timestamps must be valid ISO 8601 format
-
-## Project Structure
-
-```
-/
-├── src/
-│   ├── handlers/           # Request handlers for each endpoint
-│   ├── middleware/         # Middleware (validation, rate limiting, auth)
-│   ├── services/          # Core business logic
-│   │   ├── health.ts      # Health check service
-│   │   ├── logger.ts      # Logging service
-│   │   └── metrics.ts     # Metrics collection
-│   ├── types/             # TypeScript type definitions
-│   └── index.ts           # Main entry point
-├── docs/                  # Documentation
-├── public/                # Static assets
-└── scripts/               # Utility scripts
 ```
 
 ## Development
 
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Create a `wrangler.toml` file with your configuration:
-   ```toml
-   name = "your-worker-name"
-   main = "src/index.ts"
-   compatibility_date = "2023-01-01"
+### Prerequisites
 
-   kv_namespaces = [
-     { binding = "API_KEYS", id = "your-kv-id" },
-     { binding = "METRICS", id = "your-kv-id" }
-   ]
+- Node.js >= 18
+- npm >= 9
+- Cloudflare account with Workers and KV enabled
+- InfluxDB instance
 
-   [vars]
-   INFLUXDB_URL = "your-influxdb-url"
-   INFLUXDB_ORG = "your-org"
-   INFLUXDB_BUCKET = "your-bucket"
+### Setup
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/iot-backend.git
+   cd iot-backend
    ```
-4. Add your secrets: `npx wrangler secret put INFLUXDB_TOKEN`
-5. Deploy: `npx wrangler deploy`
 
-## Testing
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-Run the provided test suite:
+3. Copy `wrangler.toml.example` to `wrangler.toml` and configure your environment variables:
+   ```toml
+   [vars]
+   INFLUXDB_URL = "your_influxdb_url"
+   INFLUXDB_ORG = "your_org"
+   INFLUXDB_BUCKET = "your_bucket"
+   ```
+
+4. Add your Cloudflare API token secret:
+   ```bash
+   npx wrangler secret put INFLUXDB_TOKEN
+   ```
+
+### Development Commands
+
+- `npm run deploy`: Deploy to Cloudflare Workers
+- `npm run test`: Deploy and run end-to-end tests
+- `npm run test:watch`: Run tests in watch mode
+- `npm run test:coverage`: Generate test coverage report
+- `npm run format`: Format code with Prettier
+- `npm run lint`: Lint code with ESLint
+- `npm run type-check`: Check TypeScript types
+
+### Testing
+
+The project uses end-to-end tests that run against the deployed worker. This ensures we're testing the actual production behavior. Tests are written using Vitest and cover:
+
+- API key validation
+- Rate limiting
+- Measurement submission
+- Metrics retrieval
+- Error handling
+
+To run tests:
 ```bash
-npm test
+npm run test
 ```
 
-## Monitoring
+### CI/CD
 
-Monitor your worker's health and performance:
-1. Check the `/metrics` endpoint for real-time metrics
-2. Use the `/health` endpoint for component health status
-3. Review logs in Cloudflare dashboard
+The project uses GitHub Actions for continuous integration and deployment:
 
-## Contributing
+1. On push/PR to main:
+   - Deploys to Cloudflare Workers
+   - Runs end-to-end tests
+   - Uploads coverage reports
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit changes (this will automatically bump version)
-4. Push to your fork
-5. Create a Pull Request
+2. Version Management:
+   - Automatic version bumping based on commit messages
+   - Patch: Bug fixes and minor changes
+   - Minor: New features
+   - Major: Breaking changes
+
+### GitHub Actions Setup
+
+To enable CI/CD with GitHub Actions, you need to add these secrets to your repository:
+
+1. Go to your repository's Settings > Secrets and variables > Actions
+2. Add the following secrets:
+
+| Secret Name | Description | How to Get It |
+|------------|-------------|---------------|
+| `CF_API_TOKEN` | Cloudflare API token | Create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) using "Edit Cloudflare Workers" template |
+| `CF_API_KEYS_ID` | KV namespace ID for API keys | Found in Cloudflare Dashboard > Workers > KV |
+| `CF_METRICS_ID` | KV namespace ID for metrics | Found in Cloudflare Dashboard > Workers > KV |
+| `INFLUXDB_URL` | Your InfluxDB URL | From your InfluxDB setup |
+| `INFLUXDB_ORG` | Your InfluxDB organization | From your InfluxDB setup |
+| `INFLUXDB_BUCKET` | Your InfluxDB bucket | From your InfluxDB setup |
+
+Required Cloudflare API Token Permissions:
+- Workers Scripts: Edit
+- Workers KV Storage: Edit
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT

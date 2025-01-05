@@ -4,8 +4,8 @@
   "description": "Authentication API built with Cloudflare Workers and TypeScript",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "wrangler deploy src/index.ts",
     "test": "npm run deploy && vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
