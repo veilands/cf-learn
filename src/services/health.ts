@@ -3,6 +3,14 @@ import { Env, HealthStatus } from '../types';
 export async function checkInfluxDB(env: Env): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; latency: number; message?: string }> {
   const start = Date.now();
   try {
+    if (!env.INFLUXDB_TOKEN) {
+      return {
+        status: 'unhealthy',
+        latency: 0,
+        message: 'INFLUXDB_TOKEN not configured'
+      };
+    }
+
     // Use the write endpoint to check if we can write data
     const response = await fetch(
       `${env.INFLUXDB_URL}/api/v2/write?org=${env.INFLUXDB_ORG}&bucket=${env.INFLUXDB_BUCKET}&precision=ns`,
@@ -12,7 +20,8 @@ export async function checkInfluxDB(env: Env): Promise<{ status: 'healthy' | 'de
           'Authorization': `Token ${env.INFLUXDB_TOKEN}`,
           'Content-Type': 'text/plain'
         },
-        body: 'health_check,service=api value=1'
+        body: 'health_check,service=api value=1',
+        signal: AbortSignal.timeout(3000) // Add 3-second timeout
       }
     );
 

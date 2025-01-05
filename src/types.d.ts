@@ -12,14 +12,36 @@ interface FetchEvent extends Event {
   passThroughOnException(): void;
 }
 
-interface Env {
+export interface Env {
   API_KEYS: KVNamespace;
   METRICS: KVNamespace;
-  JWT_SECRET: string;
-  ACCESS_TOKEN_EXPIRES: string;
-  REFRESH_TOKEN_EXPIRES: string;
-  INFLUXDB_URL: string;
   INFLUXDB_TOKEN: string;
+  INFLUXDB_URL: string;
   INFLUXDB_ORG: string;
   INFLUXDB_BUCKET: string;
+}
+
+interface DependencyStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latency: number;
+  message?: string;
+}
+
+export interface MetricsResponse {
+  timestamp: string;
+  version: string;
+  status: {
+    influxdb: DependencyStatus;
+    kv_store: DependencyStatus;
+  };
+}
+
+export interface HealthResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  timestamp: string;
+  version: string;
+  dependencies: {
+    influxdb: DependencyStatus;
+    kv_store: DependencyStatus;
+  };
 }

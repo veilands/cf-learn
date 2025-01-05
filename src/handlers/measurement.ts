@@ -1,140 +1,93 @@
 import { Env, Measurement } from '../types';
-import { recordMetric } from '../services/metrics';
+import { validateHttpMethod, validateRequest, createErrorResponse, MeasurementRequestSchema } from '../middleware/validation';
+import { recordMeasurement } from '../services/metrics';
 import Logger from '../services/logger';
 
 export async function handleMeasurementRequest(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
   const requestId = crypto.randomUUID();
+  const endpoint = '/measurement';
 
   try {
-    Logger.info('Processing measurement request', { requestId });
-
-    if (request.method !== 'POST') {
-      Logger.warn('Invalid method for measurement endpoint', { 
-        requestId,
-        method: request.method 
-      });
-
-      return new Response(
-        JSON.stringify({
-          error: 'Method Not Allowed',
-          message: 'Only POST method is allowed for this endpoint'
-        }),
-        { 
-          status: 405,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    const measurement = await request.json() as Measurement;
-    Logger.debug('Received measurement data', { requestId, measurement });
-    
-    // Validate measurement data
-    if (!measurement.device?.id || !measurement.readings?.temperature) {
-      Logger.warn('Invalid measurement data', { 
-        requestId,
-        measurement,
-        missing: {
-          deviceId: !measurement.device?.id,
-          temperature: !measurement.readings?.temperature
-        }
-      });
-
-      return new Response(
-        JSON.stringify({
-          error: 'Bad Request',
-          message: 'Invalid measurement data. Required fields: device.id, readings.temperature'
-        }),
-        { 
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    // Add timestamp if not provided
-    if (!measurement.metadata?.timestamp) {
-      measurement.metadata = {
-        ...measurement.metadata,
-        timestamp: new Date().toISOString()
-      };
-    }
-
-    // Construct InfluxDB line protocol
-    const point = `temperature,device_id=${measurement.device.id},device_type=${measurement.device.type} ` +
-                 `value=${measurement.readings.temperature},humidity=${measurement.readings.humidity || 0} ` +
-                 `${Date.parse(measurement.metadata.timestamp)}000000`;
-
-    Logger.debug('Writing to InfluxDB', {
+    Logger.info('Processing measurement request', {
       requestId,
-      url: `${env.INFLUXDB_URL}/api/v2/write`,
-      point,
-      timestamp: measurement.metadata.timestamp
+      endpoint,
+      method: request.method
     });
 
-    const response = await fetch(
-      `${env.INFLUXDB_URL}/api/v2/write?org=${env.INFLUXDB_ORG}&bucket=${env.INFLUXDB_BUCKET}&precision=ns`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${env.INFLUXDB_TOKEN}`,
-          'Content-Type': 'text/plain'
-        },
-        body: point
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      Logger.error('InfluxDB write failed', new Error(text), {
+    // Validate HTTP method
+    const methodError = validateHttpMethod(request, ['POST'], requestId);
+    if (methodError) {
+      Logger.warn('Invalid method for measurement endpoint', {
         requestId,
-        status: response.status,
-        point
+        endpoint,
+        method: request.method
       });
-      throw new Error(`InfluxDB write failed: ${response.status} - ${text}`);
+      return methodError;
     }
 
-    const duration = Date.now() - start;
-    const statusCode = 201;
-
-    Logger.request('POST', '/measurement', statusCode, duration, {
-      requestId,
-      deviceId: measurement.device.id,
-      deviceType: measurement.device.type
-    });
-
-    await recordMetric(env, '/measurement', statusCode, duration);
-
-    return new Response(
-      JSON.stringify({
-        message: 'Measurement recorded',
-        timestamp: measurement.metadata.timestamp,
+    // Parse and validate request body
+    let measurement: Measurement;
+    try {
+      const body = await request.json();
+      measurement = validateRequest(MeasurementRequestSchema, body, requestId);
+    } catch (error) {
+      Logger.warn('Invalid measurement request', {
+        requestId,
+        endpoint,
+        error
+      });
+      return createErrorResponse(
+        400,
+        'Bad Request',
+        'Invalid request body',
         requestId
-      }),
-      { 
-        status: statusCode,
-        headers: { 'Content-Type': 'application/json' }
+      );
+    }
+
+    // Record measurement
+    const result = await recordMeasurement(measurement, env, requestId);
+    if (!result.success) {
+      return createErrorResponse(
+        500,
+        'Internal Server Error',
+        'Failed to record measurement',
+        requestId
+      );
+    }
+
+    const duration_ms = Date.now() - start;
+    Logger.request({
+      requestId,
+      method: request.method,
+      endpoint,
+      status: 201,
+      duration_ms,
+      data: {
+        device_id: measurement.device.id,
+        device_type: measurement.device.type
       }
-    );
+    });
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' }
+    });
   } catch (error) {
-    const duration = Date.now() - start;
-    const statusCode = 500;
+    const duration_ms = Date.now() - start;
+    Logger.error('Failed to process measurement', {
+      requestId,
+      endpoint,
+      method: request.method,
+      error,
+      data: { duration_ms }
+    });
 
-    Logger.error('Measurement handler error', error as Error, { requestId });
-    
-    await recordMetric(env, '/measurement', statusCode, duration);
-    
-    return new Response(
-      JSON.stringify({
-        error: 'Internal Server Error',
-        message: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      }),
-      { 
-        status: statusCode,
-        headers: { 'Content-Type': 'application/json' }
-      }
+    return createErrorResponse(
+      500,
+      'Internal Server Error',
+      error instanceof Error ? error.message : 'Failed to process measurement',
+      requestId
     );
   }
 }

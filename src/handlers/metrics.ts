@@ -1,77 +1,114 @@
-import { Env, MetricsResponse } from '../types';
-import { getMetricsCache } from '../services/metrics';
-import { checkInfluxDB, checkKVStore } from '../services/health';
-
-const { METRICS_CACHE, CACHE_TTL } = getMetricsCache();
+import { Env, MetricsResponse, HealthStatus } from '../types';
+import versionInfo from '../version.json';
+import { checkKVStore, checkInfluxDB } from '../services/health';
+import { validateHttpMethod, createErrorResponse } from '../middleware/validation';
+import Logger from '../services/logger';
 
 export async function handleMetrics(request: Request, env: Env): Promise<Response> {
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  const endpoint = '/metrics';
+
   try {
-    // Check cache first
-    const cacheKey = request.url;
-    const cached = METRICS_CACHE.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      return new Response(JSON.stringify(cached.data), {
-        headers: { 'Content-Type': 'application/json' }
+    Logger.info('Processing metrics request', {
+      requestId,
+      endpoint,
+      method: request.method
+    });
+
+    // Validate HTTP method
+    const methodError = validateHttpMethod(request, ['GET'], requestId);
+    if (methodError) {
+      Logger.warn('Invalid method for metrics endpoint', {
+        requestId,
+        endpoint,
+        method: request.method
       });
+      return methodError;
     }
 
-    // Get dependency health status
+    // Get health status for all dependencies
     const [influxStatus, kvStatus] = await Promise.all([
-      checkInfluxDB(env),
-      checkKVStore(env)
+      checkInfluxDB(env).catch(error => {
+        Logger.error('InfluxDB health check failed', {
+          requestId,
+          endpoint,
+          error
+        });
+        return {
+          status: 'unhealthy' as HealthStatus,
+          latency: 0,
+          message: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }),
+      checkKVStore(env).catch(error => {
+        Logger.error('KV health check failed', {
+          requestId,
+          endpoint,
+          error
+        });
+        return {
+          status: 'unhealthy' as HealthStatus,
+          latency: 0,
+          message: error instanceof Error ? error.message : 'Unknown error'
+        };
+      })
     ]);
 
+    const duration_ms = Date.now() - start;
     const metrics: MetricsResponse = {
       timestamp: new Date().toISOString(),
-      version: '4.0.1',
-      system: {
-        uptime: process.uptime(),
-        memory_usage: {
-          total: 0, // Not available in Workers
-          used: 0,
-          free: 0
-        }
-      },
-      dependencies: {
+      version: versionInfo.version,
+      status: {
         influxdb: {
           status: influxStatus.status,
           latency: influxStatus.latency,
-          write_success_rate: 0,
-          read_success_rate: 0,
-          error_rate: 0
+          message: influxStatus.message
         },
         kv_store: {
           status: kvStatus.status,
           latency: kvStatus.latency,
-          read_success_rate: 0,
-          write_success_rate: 0,
-          error_rate: 0
+          message: kvStatus.message
         }
-      },
-      requests: {
-        total: 0,
-        success: 0,
-        error: 0,
-        by_endpoint: {}
       }
     };
 
-    // Cache the response
-    METRICS_CACHE.set(cacheKey, {
-      data: metrics,
-      timestamp: Date.now()
+    Logger.request({
+      requestId,
+      method: request.method,
+      endpoint,
+      status: 200,
+      duration_ms,
+      data: {
+        influxdb_status: influxStatus.status,
+        kv_status: kvStatus.status
+      }
     });
 
     return new Response(JSON.stringify(metrics), {
-      headers: { 'Content-Type': 'application/json' }
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: 'Failed to fetch metrics' }),
-      {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
+    const duration_ms = Date.now() - start;
+    Logger.error('Failed to fetch metrics', {
+      requestId,
+      endpoint,
+      method: request.method,
+      error,
+      data: { duration_ms }
+    });
+
+    return createErrorResponse(
+      500,
+      'Internal Server Error',
+      error instanceof Error ? error.message : 'Failed to fetch metrics',
+      requestId
     );
   }
 }

@@ -1,9 +1,15 @@
 export interface Env {
+  // KV Namespaces
   API_KEYS: KVNamespace;
+  METRICS: KVNamespace;
+
+  // Environment Variables
   INFLUXDB_URL: string;
-  INFLUXDB_TOKEN: string;
   INFLUXDB_ORG: string;
   INFLUXDB_BUCKET: string;
+
+  // Encrypted Secrets
+  INFLUXDB_TOKEN: string;
 }
 
 export interface Measurement {

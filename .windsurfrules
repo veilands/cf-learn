@@ -1,0 +1,17 @@
+This is backend for IoT project where we are using
+- cloudflare workers and typescript which is serverless architecture 
+- InfluxDB and Cloudflare KV to store data
+- We are building a backend for IoT devices
+- use curl for quick testing always add timeout to requests
+- use git for version control (with github) and husky for git hooks to increment version with each commit
+- we use wrangler for deployment
+- we use clloudflare secretes for sensitive data
+- INFLUXDB_TOKEN is a secret which is stored in cloudflare, manually added and not pushed to github and nobody can see it and you don't have to worry about it
+- we keep documentation in docs folder
+- we use mermaid for diagrams
+- readme.md is for documentation and installation instructions
+- authorization is done with API keys which we store in KV
+- there is a public folder for static assets which are served by cloudflare workers
+- for API testing we use API key - my_api_key_12345
+- we don't use local wrangler dev server instead we use cloudflare workers, before testing we need to deploy the worker
+- All validations are done in middleware

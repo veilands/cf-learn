@@ -1,59 +1,96 @@
-import { Env, HealthStatus } from '../types';
-import { checkInfluxDB, checkKVStore } from '../services/health';
+import { Env } from '../types';
+import { handleMetrics } from './metrics';
+import { validateHttpMethod, createErrorResponse } from '../middleware/validation';
+import Logger from '../services/logger';
+import { withCache } from '../middleware/cache';
 
-export async function handleHealthCheck(request: Request, env: Env): Promise<Response> {
+async function handleHealthCheckInternal(request: Request, env: Env): Promise<Response> {
+  const start = Date.now();
+  const requestId = crypto.randomUUID();
+  const endpoint = '/health';
+
   try {
-    const [influxStatus, kvStatus] = await Promise.all([
-      checkInfluxDB(env),
-      checkKVStore(env)
-    ]);
+    Logger.info('Processing health check request', {
+      requestId,
+      endpoint,
+      method: request.method
+    });
 
-    const health: HealthStatus = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      version: '4.0.1',
+    // Validate HTTP method
+    const methodError = validateHttpMethod(request, ['GET'], requestId);
+    if (methodError) {
+      Logger.warn('Invalid method for health endpoint', {
+        requestId,
+        endpoint,
+        method: request.method
+      });
+      return methodError;
+    }
+
+    // Get metrics response
+    const metricsResponse = await handleMetrics(request, env);
+    const metrics = await metricsResponse.json();
+
+    // Determine overall health status
+    let status = 'healthy';
+    if (metrics.status.influxdb.status === 'unhealthy' || metrics.status.kv_store.status === 'unhealthy') {
+      status = 'unhealthy';
+    } else if (metrics.status.influxdb.status === 'degraded' || metrics.status.kv_store.status === 'degraded') {
+      status = 'degraded';
+    }
+
+    const health = {
+      status,
+      timestamp: metrics.timestamp,
+      version: metrics.version,
       dependencies: {
-        influxdb: influxStatus,
-        kv_store: kvStatus
+        influxdb: metrics.status.influxdb,
+        kv_store: metrics.status.kv_store
       }
     };
 
-    // Determine overall health status
-    if (influxStatus.status === 'unhealthy' || kvStatus.status === 'unhealthy') {
-      health.status = 'unhealthy';
-    } else if (influxStatus.status === 'degraded' || kvStatus.status === 'degraded') {
-      health.status = 'degraded';
-    }
+    const statusCode = status === 'healthy' ? 200 : 
+                      status === 'degraded' ? 200 : 503;
 
-    const statusCode = health.status === 'healthy' ? 200 : 
-                      health.status === 'degraded' ? 200 : 503;
+    const duration_ms = Date.now() - start;
+    Logger.request({
+      requestId,
+      method: request.method,
+      endpoint,
+      status: statusCode,
+      duration_ms,
+      data: {
+        health_status: status,
+        influxdb_status: metrics.status.influxdb.status,
+        kv_status: metrics.status.kv_store.status
+      }
+    });
 
     return new Response(JSON.stringify(health), {
       status: statusCode,
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
-    const health: HealthStatus = {
-      status: 'unhealthy',
-      timestamp: new Date().toISOString(),
-      version: '4.0.1',
-      dependencies: {
-        influxdb: {
-          status: 'unhealthy',
-          latency: -1,
-          message: 'Health check failed'
-        },
-        kv_store: {
-          status: 'unhealthy',
-          latency: -1,
-          message: 'Health check failed'
-        }
-      }
-    };
-
-    return new Response(JSON.stringify(health), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json' }
+    const duration_ms = Date.now() - start;
+    Logger.error('Health check failed', {
+      requestId,
+      endpoint,
+      method: request.method,
+      error,
+      data: { duration_ms }
     });
+
+    return createErrorResponse(
+      503,
+      'Service Unavailable',
+      'Health check failed',
+      requestId
+    );
   }
 }
+
+// Cache health endpoint for 30 seconds to avoid hammering dependencies
+export const handleHealthCheck = withCache(handleHealthCheckInternal, {
+  cacheDuration: 30, // 30 seconds
+  cacheBypass: 'no-cache' // Allow bypass with Cache-Control: no-cache
+});
