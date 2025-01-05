@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
     - uses: actions/checkout@v3
@@ -26,22 +26,29 @@ jobs:
       run: |
         cat > wrangler.toml << EOL
         name = "simple-backend"
-        main = "src/index.ts"
         compatibility_date = "2023-12-18"
+        assets = { directory = "./public/" }
 
-        routes = [
-          { pattern = "api.pasts.dev/*", custom_domain = true }
-        ]
+        main = "src/index.ts"
+        workers_dev = true
 
-        kv_namespaces = [
-          { binding = "API_KEYS", id = "${{ secrets.CF_API_KEYS_ID }}" },
-          { binding = "METRICS", id = "${{ secrets.CF_METRICS_ID }}" }
-        ]
+        [[routes]]
+        pattern = "https://api.pasts.dev/*"
+        zone_id = "${{ secrets.CF_ZONE_ID }}"
+
+        [[kv_namespaces]]
+        binding = "API_KEYS"
+        id = "${{ secrets.CF_API_KEYS_ID }}"
+
+        [[kv_namespaces]]
+        binding = "METRICS"
+        id = "${{ secrets.CF_METRICS_ID }}"
 
         [vars]
         INFLUXDB_URL = "${{ secrets.INFLUXDB_URL }}"
         INFLUXDB_ORG = "${{ secrets.INFLUXDB_ORG }}"
         INFLUXDB_BUCKET = "${{ secrets.INFLUXDB_BUCKET }}"
+        
         EOL
     
     - name: Deploy to Cloudflare Workers
