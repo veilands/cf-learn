@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
 
 // Common schemas
 export const ApiKeySchema = z.object({
@@ -109,26 +109,21 @@ export interface ErrorResponse {
 // Create error response
 export function createErrorResponse(
   status: number,
+  requestId: string,
   error: string,
-  message: string,
-  requestId?: string
+  message?: string
 ): Response {
-  const response: ErrorResponse = {
+  const errorResponse = {
     error,
     message,
-    ...(requestId && { requestId })
+    requestId
   };
 
-  Logger.error('Creating error response', {
-    requestId,
-    error,
-    message,
-    status
-  });
-
-  return new Response(JSON.stringify(response), {
+  return new Response(JSON.stringify(errorResponse), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: {
+      'Content-Type': 'application/json'
+    }
   });
 }
 
@@ -141,9 +136,9 @@ export function validateHttpMethod(
   if (!allowedMethods.includes(request.method)) {
     return createErrorResponse(
       405,
+      requestId,
       'Method Not Allowed',
-      `This endpoint only supports ${allowedMethods.join(', ')} methods`,
-      requestId
+      `This endpoint only supports ${allowedMethods.join(', ')} methods`
     );
   }
   return null;
@@ -151,13 +146,12 @@ export function validateHttpMethod(
 
 // Content-type validation middleware
 export function validateContentType(request: Request, contentType: string, requestId?: string): Response | null {
-  const actualContentType = request.headers.get('content-type');
-  if (!actualContentType || !actualContentType.includes(contentType)) {
+  if (request.headers.get('content-type') !== contentType) {
     return createErrorResponse(
       400,
+      requestId,
       'Bad Request',
-      `Content-Type must be ${contentType}`,
-      requestId
+      `Content-Type must be ${contentType}`
     );
   }
   return null;
@@ -168,7 +162,7 @@ export function validateRequest<T extends z.ZodType>(
   schema: T,
   data: unknown,
   requestId: string
-): z.infer<T> {
+): Response | z.infer<T> {
   try {
     const result = schema.safeParse(data);
     if (!result.success) {
@@ -176,13 +170,15 @@ export function validateRequest<T extends z.ZodType>(
         requestId, 
         errors: result.error.errors 
       });
-      throw new z.ZodError(result.error.errors);
+      return createErrorResponse(
+        400,
+        requestId,
+        'Bad Request',
+        result.error.errors[0].message
+      );
     }
     return result.data;
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw error;
-    }
     Logger.error('Unexpected validation error', { 
       requestId, 
       error: error instanceof Error ? {
@@ -191,7 +187,12 @@ export function validateRequest<T extends z.ZodType>(
         name: error.name
       } : error
     });
-    throw new Error('Validation failed: Unexpected error');
+    return createErrorResponse(
+      500,
+      requestId,
+      'Internal Server Error',
+      'Validation failed: Unexpected error'
+    );
   }
 }
 
@@ -199,7 +200,7 @@ export function validateResponse<T>(
   schema: z.ZodSchema<T>, 
   data: unknown, 
   requestId: string
-): T {
+): Response | T {
   try {
     Logger.debug('Validating response', { requestId, data });
     const result = schema.safeParse(data);
@@ -208,14 +209,16 @@ export function validateResponse<T>(
         requestId, 
         errors: result.error.errors 
       });
-      throw new z.ZodError(result.error.errors);
+      return createErrorResponse(
+        500,
+        requestId,
+        'Internal Server Error',
+        'Response validation failed'
+      );
     }
     Logger.debug('Response validation successful', { requestId });
     return result.data;
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw error;
-    }
     Logger.error('Unexpected response validation error', { 
       requestId, 
       error: error instanceof Error ? {
@@ -224,22 +227,35 @@ export function validateResponse<T>(
         name: error.name
       } : error
     });
-    throw new Error('Response validation failed: Unexpected error');
+    return createErrorResponse(
+      500,
+      requestId,
+      'Internal Server Error',
+      'Response validation failed: Unexpected error'
+    );
   }
 }
 
 // Helper to extract and validate API key
-export function validateApiKey(headers: Headers, requestId: string): string {
-  const headerObj = { 'x-api-key': headers.get('x-api-key') || '' };
-  const result = ApiKeySchema.safeParse(headerObj);
-  
-  if (!result.success) {
-    Logger.warn('Invalid or missing API key', { 
-      requestId,
-      errors: result.error.errors
-    });
-    throw new z.ZodError(result.error.errors);
+export async function validateApiKey(
+  apiKey: string | null,
+  env: Env,
+  requestId: string
+): Promise<Response | null> {
+  if (!apiKey) {
+    Logger.warn('Missing API key', { requestId });
+    return createErrorResponse(401, requestId, 'Unauthorized', 'API key required');
   }
-  
-  return result.data['x-api-key'];
+
+  try {
+    const isValid = await env.API_KEYS.get(apiKey);
+    if (!isValid) {
+      Logger.warn('Invalid API key', { requestId, apiKey });
+      return createErrorResponse(401, requestId, 'Unauthorized', 'Invalid API key');
+    }
+    return null;
+  } catch (error) {
+    Logger.error('API key validation failed', { requestId, apiKey, error });
+    return createErrorResponse(500, requestId, 'Internal Server Error');
+  }
 }

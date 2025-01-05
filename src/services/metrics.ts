@@ -1,5 +1,6 @@
 import { Env, Measurement } from '../types';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
+import { getFromKVCache, setKVCache } from '../middleware/cache';
 
 const CACHE_TTL = 10000; // 10 seconds
 
@@ -8,9 +9,32 @@ function sanitizeTag(value: string): string {
   return value.replace(/[,= ]/g, '\\$&');
 }
 
-export async function recordMetric(env: Env, endpoint: string, status: number, duration: number) {
+export async function recordMetric(env: Env, endpoint: string, status: number, duration: number, rateLimit?: {
+  remaining: number;
+  limit: number;
+  apiKey: string;
+}) {
   try {
-    const line = `api_metrics,endpoint=${sanitizeTag(endpoint)} status=${status},duration=${duration} ${Date.now() * 1000000}`;
+    // Base metric line
+    let line = `api_metrics,endpoint=${sanitizeTag(endpoint)}`;
+    
+    // Add rate limit tags if available
+    if (rateLimit) {
+      line += `,api_key=${sanitizeTag(rateLimit.apiKey)}`;
+    }
+
+    // Add fields
+    line += ` status=${status},duration=${duration}`;
+    
+    // Add rate limit fields if available
+    if (rateLimit) {
+      line += `,rate_limit_remaining=${rateLimit.remaining}`;
+      line += `,rate_limit_used=${rateLimit.limit - rateLimit.remaining}`;
+      line += `,rate_limit_total=${rateLimit.limit}`;
+      line += `,rate_limit_usage_percent=${((rateLimit.limit - rateLimit.remaining) / rateLimit.limit) * 100}`;
+    }
+
+    line += ` ${Date.now() * 1000000}`;
     
     // Build URL with encoded parameters
     const baseUrl = env.INFLUXDB_URL.endsWith('/') ? env.INFLUXDB_URL.slice(0, -1) : env.INFLUXDB_URL;
@@ -169,22 +193,9 @@ export async function recordMeasurement(measurement: Measurement, env: Env, requ
 
 // Cache metrics in KV store
 export async function getMetricsFromCache(env: Env, cacheKey: string): Promise<any | null> {
-  try {
-    const data = await env.METRICS.get(cacheKey);
-    if (data) {
-      return JSON.parse(data);
-    }
-    return null;
-  } catch (error) {
-    Logger.error('Failed to get metrics from cache', { error });
-    return null;
-  }
+  return getFromKVCache(env, cacheKey);
 }
 
 export async function setMetricsCache(env: Env, cacheKey: string, data: any): Promise<void> {
-  try {
-    await env.METRICS.put(cacheKey, JSON.stringify(data), { expirationTtl: CACHE_TTL });
-  } catch (error) {
-    Logger.error('Failed to set metrics cache', { error });
-  }
+  await setKVCache(env, cacheKey, data, CACHE_TTL);
 }

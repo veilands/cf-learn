@@ -11,7 +11,7 @@ interface LogContext {
   [key: string]: any;
 }
 
-class Logger {
+export class Logger {
   private static readonly LOG_LEVELS: Record<LogLevel, number> = {
     debug: 0,
     info: 1,
@@ -43,78 +43,51 @@ class Logger {
       formattedContext.error = this.formatError(formattedContext.error);
     }
 
-    // Safely handle circular references and large objects
-    try {
-      JSON.stringify(formattedContext);
-    } catch (error) {
-      // If JSON.stringify fails, create a new object with safe properties
-      const safeContext: LogContext = {
-        requestId: formattedContext.requestId,
-        method: formattedContext.method,
-        endpoint: formattedContext.endpoint,
-        status: formattedContext.status,
-        duration_ms: formattedContext.duration_ms
-      };
-
-      if (formattedContext.error) {
-        safeContext.error = this.formatError(formattedContext.error);
-      }
-
-      if (formattedContext.data) {
-        try {
-          safeContext.data = JSON.parse(JSON.stringify(formattedContext.data));
-        } catch {
-          safeContext.data = '[Complex data structure]';
-        }
-      }
-
-      return safeContext;
-    }
-
     return formattedContext;
   }
 
-  private static log(level: LogLevel, message: string, context: LogContext = {}) {
-    if (!this.shouldLog(level)) {
-      return;
-    }
-
-    const timestamp = new Date().toISOString();
-    const formattedContext = this.formatContext(context);
-
-    try {
-      console.log(JSON.stringify({
-        timestamp,
-        level,
+  static debug(message: string, context: LogContext = {}): void {
+    if (this.shouldLog('debug')) {
+      console.debug(JSON.stringify({
+        level: 'debug',
         message,
-        ...formattedContext
-      }));
-    } catch (error) {
-      // Fallback logging if JSON.stringify fails
-      console.log(JSON.stringify({
-        timestamp,
-        level,
-        message,
-        error: 'Failed to stringify log context',
-        requestId: context.requestId
+        timestamp: new Date().toISOString(),
+        ...this.formatContext(context)
       }));
     }
   }
 
-  public static debug(message: string, context: LogContext = {}) {
-    this.log('debug', message, context);
+  static info(message: string, context: LogContext = {}): void {
+    if (this.shouldLog('info')) {
+      console.info(JSON.stringify({
+        level: 'info',
+        message,
+        timestamp: new Date().toISOString(),
+        ...this.formatContext(context)
+      }));
+    }
   }
 
-  public static info(message: string, context: LogContext = {}) {
-    this.log('info', message, context);
+  static warn(message: string, context: LogContext = {}): void {
+    if (this.shouldLog('warn')) {
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message,
+        timestamp: new Date().toISOString(),
+        ...this.formatContext(context)
+      }));
+    }
   }
 
-  public static warn(message: string, context: LogContext = {}) {
-    this.log('warn', message, context);
-  }
-
-  public static error(message: string, context: LogContext = {}) {
-    this.log('error', message, context);
+  static error(message: string, context: LogContext = {}): void {
+    if (this.shouldLog('error')) {
+      console.error(JSON.stringify({
+        level: 'error',
+        message,
+        timestamp: new Date().toISOString(),
+        ...this.formatContext(context)
+      }));
+    }
   }
 
   public static request(context: LogContext = {}) {
@@ -122,5 +95,3 @@ class Logger {
     this.info(`${method} ${endpoint} ${status} ${duration_ms}ms`, rest);
   }
 }
-
-export default Logger;

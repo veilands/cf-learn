@@ -1,5 +1,5 @@
 import { Env } from '../types';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
 
 export interface CacheConfig {
   cacheDuration: number;  // in seconds
@@ -199,4 +199,27 @@ export function withCache(
       );
     }
   };
+}
+
+// KV Store caching functions
+export async function getFromKVCache<T>(env: Env, cacheKey: string): Promise<T | null> {
+  try {
+    const cached = await env.METRICS.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as T;
+    }
+    return null;
+  } catch (error) {
+    Logger.error('Error getting data from KV cache', { error, cacheKey });
+    return null;
+  }
+}
+
+export async function setKVCache(env: Env, cacheKey: string, data: any, ttl?: number): Promise<void> {
+  try {
+    const options = ttl ? { expirationTtl: ttl } : undefined;
+    await env.METRICS.put(cacheKey, JSON.stringify(data), options);
+  } catch (error) {
+    Logger.error('Error setting data in KV cache', { error, cacheKey });
+  }
 }

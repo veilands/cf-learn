@@ -1,16 +1,15 @@
 import { Env } from './types';
-import { checkRateLimit, getRateLimitHeaders } from './middleware/rateLimiter';
-import { recordMetric } from './services/metrics';
-import {
-  handleHealthCheck,
-  handleMetrics,
-  handleMeasurementRequest,
-  handleTimeRequest,
-  handleDateRequest,
-  handleVersionRequest
-} from './handlers';
+import { handleHealthCheck } from './handlers/health';
+import { handleMetrics } from './handlers/metrics';
+import { handleMeasurementRequest } from './handlers/measurement';
+import { handleTimeRequest } from './handlers/time';
+import { handleVersionRequest } from './handlers/version';
 import { validateApiKey, createErrorResponse } from './middleware/validation';
-import Logger from './services/logger';
+import { rateLimitMiddleware } from './middleware/rateLimit';
+import { recordMetric } from './services/metrics';
+import { Logger } from './services/logger';
+
+export { RateLimiter } from './durable_objects/rateLimiter';
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
@@ -19,53 +18,45 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   const endpoint = url.pathname;
 
   try {
-    // Health check endpoint should be accessible without API key
-    if (endpoint === '/health') {
-      return handleHealthCheck(request, env);
-    }
+    Logger.info('Request started', {
+      requestId,
+      method: request.method,
+      endpoint,
+      userAgent: request.headers.get('user-agent'),
+      clientIp: request.headers.get('cf-connecting-ip')
+    });
 
-    // Validate API key for all other endpoints
+    // Extract API key
     const apiKey = request.headers.get('x-api-key');
-    if (!apiKey) {
-      return createErrorResponse(
-        401,
-        'Unauthorized',
-        'API key required',
-        requestId
-      );
+
+    // Skip API key validation for health endpoint
+    if (endpoint !== '/health') {
+      // Validate API key
+      const apiKeyError = await validateApiKey(apiKey, env, requestId);
+      if (apiKeyError) {
+        const duration = Date.now() - start;
+        await recordMetric(env, endpoint, apiKeyError.status, duration, {
+          remaining: 0,
+          limit: 100,
+          apiKey: apiKey || 'none'
+        });
+        return apiKeyError;
+      }
+
+      // Check rate limit
+      const rateLimitResponse = await rateLimitMiddleware(request, env, requestId, apiKey!);
+      if (rateLimitResponse) {
+        const duration = Date.now() - start;
+        await recordMetric(env, endpoint, rateLimitResponse.status, duration, {
+          remaining: parseInt(rateLimitResponse.headers.get('X-RateLimit-Remaining') || '0'),
+          limit: parseInt(rateLimitResponse.headers.get('X-RateLimit-Limit') || '100'),
+          apiKey: apiKey!
+        });
+        return rateLimitResponse;
+      }
     }
 
-    // Validate API key in KV
-    const isValidKey = await env.API_KEYS.get(apiKey);
-    if (!isValidKey) {
-      return createErrorResponse(
-        401,
-        'Unauthorized',
-        'Invalid API key',
-        requestId
-      );
-    }
-
-    // Check rate limit
-    const rateLimit = await checkRateLimit(env, apiKey, requestId);
-    if (!rateLimit.allowed) {
-      const response = createErrorResponse(
-        429,
-        'Too Many Requests',
-        'Rate limit exceeded. Please try again later.',
-        requestId
-      );
-      
-      // Add rate limit headers
-      const headers = getRateLimitHeaders(rateLimit);
-      headers.forEach((value, key) => {
-        response.headers.set(key, value);
-      });
-      
-      return response;
-    }
-
-    // Route request to appropriate handler
+    // Route the request
     let response: Response;
     try {
       switch (endpoint) {
@@ -78,20 +69,39 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         case '/time':
           response = await handleTimeRequest(request);
           break;
-        case '/date':
-          response = await handleDateRequest(request);
-          break;
         case '/version':
           response = await handleVersionRequest(request, env);
           break;
+        case '/health':
+          response = await handleHealthCheck(request, env);
+          break;
         default:
-          response = createErrorResponse(
-            404,
-            'Not Found',
-            'Endpoint not found',
-            requestId
-          );
+          response = createErrorResponse(404, requestId, 'Not Found');
       }
+
+      // Copy rate limit headers from the rate limiter middleware
+      const headers = new Headers(response.headers);
+      if (endpoint !== '/health' && apiKey) {
+        const rateLimiter = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(apiKey));
+        const rateLimitResponse = await rateLimiter.fetch(new Request(request.url + '/increment'));
+        const rateLimitResult = await rateLimitResponse.json();
+        
+        headers.set('X-RateLimit-Limit', rateLimitResult.headers['X-RateLimit-Limit']);
+        headers.set('X-RateLimit-Remaining', rateLimitResult.headers['X-RateLimit-Remaining']);
+        headers.set('X-RateLimit-Reset', rateLimitResult.headers['X-RateLimit-Reset']);
+      }
+
+      // Add CORS headers for successful responses
+      if (response.status >= 200 && response.status < 300) {
+        headers.set('Access-Control-Allow-Origin', '*');
+        headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key');
+      }
+      
+      response = new Response(response.body, {
+        status: response.status,
+        headers
+      });
     } catch (error) {
       Logger.error('Handler error', {
         requestId,
@@ -99,38 +109,44 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         method: request.method,
         error
       });
-      response = createErrorResponse(
-        500,
-        'Internal Server Error',
-        'An unexpected error occurred',
-        requestId
-      );
+      response = createErrorResponse(500, requestId, 'Internal Server Error');
     }
 
-    // Add rate limit headers to successful response
-    const headers = getRateLimitHeaders(rateLimit);
-    headers.forEach((value, key) => {
-      response.headers.set(key, value);
-    });
-
-    // Record metrics
     const duration = Date.now() - start;
-    await recordMetric(env, endpoint, response.status, duration);
+    
+    // Record metrics with rate limit info if available
+    const rateLimitHeaders = response.headers;
+    if (apiKey && rateLimitHeaders.has('x-ratelimit-limit')) {
+      await recordMetric(env, endpoint, response.status, duration, {
+        remaining: parseInt(rateLimitHeaders.get('x-ratelimit-remaining') || '0'),
+        limit: parseInt(rateLimitHeaders.get('x-ratelimit-limit') || '100'),
+        apiKey
+      });
+    } else {
+      await recordMetric(env, endpoint, response.status, duration);
+    }
+
+    Logger.info('Request completed', {
+      requestId,
+      status: response.status,
+      duration_ms: duration
+    });
 
     return response;
   } catch (error) {
-    Logger.error('Request processing error', {
+    const duration = Date.now() - start;
+    Logger.error('Request failed', {
       requestId,
       endpoint,
+      error,
       method: request.method,
-      error
+      userAgent: request.headers.get('user-agent'),
+      clientIp: request.headers.get('cf-connecting-ip')
     });
-    return createErrorResponse(
-      500,
-      'Internal Server Error',
-      'An unexpected error occurred',
-      requestId
-    );
+    
+    await recordMetric(env, endpoint, 500, duration);
+    
+    return createErrorResponse(500, requestId, 'Internal Server Error');
   }
 }
 

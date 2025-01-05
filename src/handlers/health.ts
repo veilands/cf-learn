@@ -1,7 +1,7 @@
 import { Env } from '../types';
 import { handleMetrics } from './metrics';
 import { validateHttpMethod, createErrorResponse } from '../middleware/validation';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
 import { withCache } from '../middleware/cache';
 
 interface MetricsResponse {

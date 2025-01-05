@@ -2,7 +2,7 @@ import { Env, MetricsResponse, HealthStatus } from '../types';
 import versionInfo from '../version.json';
 import { checkKVStore, checkInfluxDB } from '../services/health';
 import { validateHttpMethod, createErrorResponse } from '../middleware/validation';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
 
 export async function handleMetrics(request: Request, env: Env): Promise<Response> {
   const start = Date.now();

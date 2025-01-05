@@ -1,17 +1,19 @@
 # IoT Backend Service
 
-A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication, rate limiting, and intelligent caching.
+A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication, rate limiting via Durable Objects, and intelligent caching.
 
 ## Features
 
 - 🔐 API Key Authentication
 - 📊 Device Measurements Collection
 - 📈 System Health Metrics
-- ⚡ Rate Limiting
+- ⚡ Durable Objects Rate Limiting
 - 🔄 Automatic Version Updates
-- 📝 Comprehensive Logging
+- 📝 Comprehensive Request Logging
 - 🧪 End-to-End Testing
-- 🚀 Intelligent Response Caching
+- 🚀 Generic KV Caching
+- 🔍 Performance Monitoring
+- 📋 Request Tracing
 
 ## Architecture
 
@@ -22,8 +24,53 @@ graph TD
     Worker -->|Store| KV[Cloudflare KV]
     Worker -->|Write| InfluxDB[InfluxDB]
     Worker -->|Validate| Auth[API Key Auth]
-    Worker -->|Rate Limit| RateLimit[Rate Limiter]
-    Worker -->|Cache| Cache[Response Cache]
+    Worker -->|Rate Limit| RateLimit[Durable Objects]
+    Worker -->|Cache| Cache[KV Cache]
+    Worker -->|Log| Logger[Request Logger]
+    Logger -->|Track| Metrics[Performance Metrics]
+```
+
+## Request Logging
+
+The service implements comprehensive request logging for monitoring and debugging:
+
+### Log Data Captured
+- Request ID (for tracing)
+- HTTP method and endpoint
+- Client information (IP, user agent)
+- Request duration
+- Response status code
+- Cache status
+- Rate limit status
+- Error details (if any)
+
+### Log Levels
+- `INFO`: Successful requests
+- `WARN`: Authentication/validation failures
+- `ERROR`: System errors and exceptions
+
+### Response Headers
+All responses include:
+- `x-request-id`: Unique request identifier
+- `x-ratelimit-*`: Rate limiting information
+- `Cache-Control`: Caching directives
+- `Content-Type`: Response format
+
+### Sample Log Output
+```json
+{
+  "timestamp": "2025-01-05T19:02:17Z",
+  "level": "info",
+  "message": "Request completed",
+  "requestId": "f1004c09-7f9b-4906-ac4f-16800eed7757",
+  "method": "GET",
+  "endpoint": "/metrics",
+  "status": 200,
+  "duration_ms": 163,
+  "clientIp": "192.0.2.1",
+  "userAgent": "curl/7.88.1",
+  "cacheStatus": "MISS"
+}
 ```
 
 ## API Endpoints
@@ -33,9 +80,9 @@ graph TD
 Submit device measurements.
 
 ```bash
-curl -X POST https://api.example.com/measurement \
+curl -X POST https://simple-backend.veilands.workers.dev/measurement \
   -H "Content-Type: application/json" \
-  -H "x-api-key: your_api_key" \
+  -H "x-api-key: my_api_key_12345" \
   -d '{
     "device": {
       "id": "device-123",
@@ -53,37 +100,42 @@ curl -X POST https://api.example.com/measurement \
 Retrieve system metrics.
 
 ```bash
-curl https://api.example.com/metrics \
-  -H "x-api-key: your_api_key"
+curl https://simple-backend.veilands.workers.dev/metrics \
+  -H "x-api-key: my_api_key_12345"
 ```
 
 Response:
 ```json
 {
-  "timestamp": "2025-01-05T13:38:19Z",
-  "version": "5.3.0",
+  "timestamp": "2025-01-05T19:02:17Z",
+  "version": "5.4.4",
   "status": {
-    "influxdb": "healthy",
-    "kv_store": "healthy"
+    "influxdb": {
+      "status": "healthy",
+      "latency": 162
+    },
+    "kv_store": {
+      "status": "healthy",
+      "latency": 200
+    }
   }
 }
 ```
 
 ### GET /health
 
-Get system health status. This endpoint is cached for 1 hour.
+Get system health status. This endpoint is cached for 30 seconds.
 
 ```bash
-curl https://api.example.com/health \
-  -H "x-api-key: your_api_key"
+curl https://simple-backend.veilands.workers.dev/health
 ```
 
 Response:
 ```json
 {
   "status": "healthy",
-  "version": "5.4.1",
-  "timestamp": "2025-01-05T16:40:40Z"
+  "version": "5.4.4",
+  "timestamp": "2025-01-05T19:02:17Z"
 }
 ```
 
@@ -92,13 +144,13 @@ Response:
 Get the current API version. This endpoint is cached for 1 hour.
 
 ```bash
-curl https://api.example.com/version \
-  -H "x-api-key: your_api_key"
+curl https://simple-backend.veilands.workers.dev/version \
+  -H "x-api-key: my_api_key_12345"
 ```
 
 Response:
 ```text
-5.4.1
+5.4.4
 ```
 
 ### GET /time
@@ -106,20 +158,65 @@ Response:
 Get the current server time. This endpoint is not cached.
 
 ```bash
-curl https://api.example.com/time \
-  -H "x-api-key: your_api_key"
+curl https://simple-backend.veilands.workers.dev/time \
+  -H "x-api-key: my_api_key_12345"
 ```
 
 Response:
 ```text
-16:40:40
+9:02:17 PM
+```
+
+## Error Handling
+
+The API uses standard HTTP status codes and returns consistent error responses:
+
+### Error Response Format
+```json
+{
+  "error": "Error Type",
+  "message": "Human readable error message",
+  "requestId": "unique-request-id",
+  "timestamp": "2025-01-05T19:02:17Z"
+}
+```
+
+### Common Error Codes
+- `401 Unauthorized`: Missing or invalid API key
+- `429 Too Many Requests`: Rate limit exceeded
+- `400 Bad Request`: Invalid request format
+- `404 Not Found`: Endpoint doesn't exist
+- `500 Internal Server Error`: Server-side error
+
+### Error Logging
+All errors are automatically logged with:
+- Full error stack trace
+- Request context (method, endpoint, headers)
+- Client information
+- Request ID for correlation
+
+### Rate Limit Errors
+When rate limit is exceeded, response includes:
+```json
+{
+  "error": "Rate limit exceeded",
+  "message": "Too many requests",
+  "requestId": "67e228dd-e045-4e69-b2f0-526637c56b37",
+  "timestamp": "2025-01-05T19:02:17Z"
+}
+```
+Headers:
+```
+x-ratelimit-limit: 100
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 1736103737
 ```
 
 ## Caching
 
-The service implements intelligent response caching to improve performance and reduce load:
+The service implements generic KV caching to improve performance and reduce load:
 
-- `/health` endpoint: Cached for 1 hour
+- `/health` endpoint: Cached for 30 seconds
 - `/version` endpoint: Cached for 1 hour
 - `/metrics` endpoint: Not cached (real-time data)
 - `/time` endpoint: Not cached (real-time data)
@@ -131,8 +228,7 @@ Cache headers in responses:
 
 To bypass cache:
 ```bash
-curl https://api.example.com/health \
-  -H "x-api-key: your_api_key" \
+curl https://simple-backend.veilands.workers.dev/health \
   -H "Cache-Control: no-cache"
 ```
 
@@ -142,15 +238,15 @@ curl https://api.example.com/health \
 
 - Node.js >= 18
 - npm >= 9
-- Cloudflare account with Workers and KV enabled
+- Cloudflare account with Workers, KV, and Durable Objects enabled
 - InfluxDB instance
 
 ### Setup
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/iot-backend.git
-   cd iot-backend
+   git clone https://github.com/veilands/cf-learn.git
+   cd cf-learn
    ```
 
 2. Install dependencies:
@@ -158,62 +254,19 @@ curl https://api.example.com/health \
    npm install
    ```
 
-3. Copy `wrangler.toml.example` to `wrangler.toml` and configure your environment variables:
-   ```toml
-   [vars]
-   INFLUXDB_URL = "your_influxdb_url"
-   INFLUXDB_ORG = "your_org"
-   INFLUXDB_BUCKET = "your_bucket"
-   ```
-
-4. Add your Cloudflare API token secret:
+3. Configure environment:
    ```bash
-   npx wrangler secret put INFLUXDB_TOKEN
-   ```
-
-### Setting up Cloudflare API Token
-
-1. Go to [Cloudflare Dashboard > API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-2. Click "Create Token"
-3. Choose "Create Custom Token"
-4. Set the following permissions:
-   - Account Resources:
-     - Workers Scripts: Edit
-     - Workers Routes: Edit
-     - Workers KV Storage: Edit
-   - Zone Resources:
-     - Zone Settings: Read
-     - Workers Routes: Edit
-     - All Zones: Edit (required for managing routes across zones)
-5. Set appropriate IP Address Filtering and TTL if desired
-6. Create token and copy it
-7. Add the token to GitHub Secrets as `CF_API_TOKEN`
-
-> Note: The "All Zones" permission is required to manage Workers routes across all zones in your account. Without this permission, you may see warnings about limited route management capabilities.
-
-### Local Development Setup
-
-1. Copy the example configuration:
-   ```bash
+   # Copy example configuration
    cp wrangler.toml.example wrangler.toml
-   ```
 
-2. Update `wrangler.toml` with your values:
-   - Replace KV namespace IDs
-   - Update InfluxDB configuration
-
-3. Set up secrets:
-   ```bash
+   # Add your Cloudflare API token secret
    npx wrangler secret put INFLUXDB_TOKEN
    ```
-
-> Note: Never commit `wrangler.toml` to version control as it may contain sensitive information.
 
 ### Development Commands
 
 - `npm run deploy`: Deploy to Cloudflare Workers
-- `npm run test`: Deploy and run end-to-end tests
-- `npm run test:watch`: Run tests in watch mode
+- `npm run test`: Run tests with Vitest
 - `npm run test:coverage`: Generate test coverage report
 - `npm run format`: Format code with Prettier
 - `npm run lint`: Lint code with ESLint
@@ -221,54 +274,74 @@ curl https://api.example.com/health \
 
 ### Testing
 
-The project uses end-to-end tests that run against the deployed worker. This ensures we're testing the actual production behavior. Tests are written using Vitest and cover:
+The project includes comprehensive tests using Vitest:
 
-- API key validation
-- Rate limiting
-- Measurement submission
-- Metrics retrieval
+#### Test Coverage
+- API endpoints
+- Authentication
+- Rate limiting with Durable Objects
+- Generic KV caching
 - Error handling
+- Request validation
 
-To run tests:
+#### Running Tests
 ```bash
+# Run all tests
 npm run test
+
+# Run with coverage report
+npm run test:coverage
+
+# Run specific test file
+npm run test src/tests/rateLimiter.test.ts
 ```
 
-### CI/CD
+#### Shell Script Testing
+For quick API testing:
+```bash
+# Test all endpoints
+./test-endpoints.sh
 
-The project uses GitHub Actions for continuous integration and deployment:
+# Test rate limiting
+./test-rate-limit.sh
+```
 
-1. On push/PR to main:
-   - Deploys to Cloudflare Workers
-   - Runs end-to-end tests
-   - Uploads coverage reports
+### Monitoring and Debugging
 
-2. Version Management:
-   - Automatic version bumping based on commit messages
-   - Patch: Bug fixes and minor changes
-   - Minor: New features
-   - Major: Breaking changes
+#### Request Tracing
+Every request can be traced using the `x-request-id` header:
 
-### GitHub Actions Setup
+1. Find request ID in response headers
+2. Search logs using the request ID
+3. View complete request lifecycle
 
-To enable CI/CD with GitHub Actions, you need to add these secrets to your repository:
+#### Performance Monitoring
+Monitor API performance using:
+- Request duration metrics
+- Cache hit rates
+- Error rates
+- Rate limit usage
 
-1. Go to your repository's Settings > Secrets and variables > Actions
-2. Add the following secrets:
+#### Log Levels
+Configure log level in `wrangler.toml`:
+```toml
+[vars]
+LOG_LEVEL = "debug" # Options: debug, info, warn, error
+```
 
-| Secret Name | Description | How to Get It |
-|------------|-------------|---------------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token | Create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) using "Edit Cloudflare Workers" template |
-| `CF_API_KEYS_ID` | KV namespace ID for API keys | Found in Cloudflare Dashboard > Workers > KV |
-| `CF_METRICS_ID` | KV namespace ID for metrics | Found in Cloudflare Dashboard > Workers > KV |
-| `CF_ZONE_ID` | Zone ID for custom domain | Found in Cloudflare Dashboard > Domain Overview |
-| `INFLUXDB_URL` | Your InfluxDB URL | From your InfluxDB setup |
-| `INFLUXDB_ORG` | Your InfluxDB organization | From your InfluxDB setup |
-| `INFLUXDB_BUCKET` | Your InfluxDB bucket | From your InfluxDB setup |
+### Deployment
 
-Required Cloudflare API Token Permissions:
-- Workers Scripts: Edit
-- Workers KV Storage: Edit
+1. Build and deploy:
+   ```bash
+   npm run deploy
+   ```
+
+2. Verify deployment:
+   ```bash
+   curl https://simple-backend.veilands.workers.dev/health
+   ```
+
+3. Monitor logs in Cloudflare Dashboard
 
 ## License
 

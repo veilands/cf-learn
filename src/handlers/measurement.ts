@@ -1,7 +1,7 @@
 import { Env, Measurement } from '../types';
 import { validateHttpMethod, validateRequest, createErrorResponse, MeasurementRequestSchema, validateContentType } from '../middleware/validation';
 import { recordMeasurement } from '../services/metrics';
-import Logger from '../services/logger';
+import { Logger } from '../services/logger';
 
 export async function handleMeasurementRequest(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
@@ -41,7 +41,11 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
     let measurement: Measurement;
     try {
       const body = await request.json();
-      measurement = validateRequest(MeasurementRequestSchema, body, requestId);
+      const validationResult = validateRequest(MeasurementRequestSchema, body, requestId);
+      if (validationResult instanceof Response) {
+        return validationResult;
+      }
+      measurement = validationResult;
     } catch (error) {
       Logger.warn('Invalid measurement request', {
         requestId,
@@ -50,9 +54,9 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       });
       return createErrorResponse(
         400,
+        requestId,
         'Bad Request',
-        'Invalid request body',
-        requestId
+        'Invalid request body'
       );
     }
 
@@ -61,9 +65,9 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
     if (!result.success) {
       return createErrorResponse(
         500,
+        requestId,
         'Internal Server Error',
-        'Failed to record measurement',
-        requestId
+        'Failed to record measurement'
       );
     }
 
@@ -96,9 +100,9 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
 
     return createErrorResponse(
       500,
+      requestId,
       'Internal Server Error',
-      error instanceof Error ? error.message : 'Failed to process measurement',
-      requestId
+      error instanceof Error ? error.message : 'Failed to process measurement'
     );
   }
 }
