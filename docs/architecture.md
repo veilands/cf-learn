@@ -12,7 +12,8 @@ graph TD
     subgraph Cloudflare Workers
         Handler[Request Handler] -->|Validate| Auth[Authentication]
         Auth -->|Check| RateLimit[Rate Limiter]
-        RateLimit -->|Process| Logic[Business Logic]
+        RateLimit -->|Validate| Schema[Schema Validation]
+        Schema -->|Process| Logic[Business Logic]
         Logic -->|Log| Logger[Logger Service]
         Logic -->|Store| MetricsService[Metrics Service]
         Logic -->|Check| Health[Health Service]
@@ -33,6 +34,7 @@ sequenceDiagram
     participant CF as Cloudflare Worker
     participant Auth as Auth Service
     participant RL as Rate Limiter
+    participant Val as Validator
     participant KV as KV Store
     participant IDB as InfluxDB
     participant Log as Logger
@@ -47,6 +49,9 @@ sequenceDiagram
     RL->>+KV: Get Current Count
     KV-->>-RL: Count
     RL-->>-CF: Within Limit
+
+    CF->>+Val: Validate Request
+    Val-->>-CF: Valid Request
 
     CF->>+IDB: Process Request
     IDB-->>-CF: Success
@@ -86,7 +91,7 @@ graph TD
     Device[IoT Device] -->|Send Data| API[API Endpoint]
     
     subgraph Data Processing
-        API -->|Validate| Parser[Data Parser]
+        API -->|Validate Schema| Parser[Data Parser]
         Parser -->|Transform| Protocol[Line Protocol]
         Protocol -->|Write| Buffer[Write Buffer]
     end
@@ -102,69 +107,105 @@ graph TD
     style Device fill:#f9f,stroke:#333,stroke-width:2px
     style API fill:#bbf,stroke:#333,stroke-width:2px
     style IDB fill:#bfb,stroke:#333,stroke-width:2px
-    style Health fill:#fbb,stroke:#333,stroke-width:2px
+    style Metrics fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
-## Component Interaction
+## Component Interactions
 
 ```mermaid
 graph TD
-    subgraph External
+    subgraph External Services
         IDB[InfluxDB]
         KV[KV Store]
     end
-    
-    subgraph Core
-        HS[Health Service]
+
+    subgraph Core Services
         MS[Metrics Service]
+        HS[Health Service]
         LS[Logger Service]
+        VS[Validation Service]
+    end
+
+    subgraph Middleware
+        Auth[Authentication]
         RL[Rate Limiter]
+        Val[Validator]
     end
-    
+
     subgraph Handlers
-        RT[Request Router]
-        AU[Authentication]
-        VA[Request Validation]
-        RH[Request Handler]
+        MH[Measurement Handler]
+        HH[Health Handler]
+        MetH[Metrics Handler]
+        TH[Time Handler]
+        VH[Version Handler]
     end
+
+    MH & MetH & HH & TH & VH -->|Use| Auth
+    Auth -->|Check| KV
+    Auth -->|Next| RL
+    RL -->|Check| KV
+    RL -->|Next| Val
+    Val -->|Validate| VS
     
-    RT --> RH
-    RH --> AU
-    RH --> VA
-    RH --> RL
-    RH --> HS
-    RH --> MS
-    RH --> LS
+    MH -->|Write| IDB
+    MH & MetH & HH -->|Use| MS
+    MS -->|Check| IDB
+    MS -->|Check| KV
+    HS -->|Use| MS
     
-    HS --> IDB
-    MS --> KV
-    RL --> KV
-    
-    style External fill:#f9f,stroke:#333,stroke-width:4px
-    style Core fill:#bbf,stroke:#333,stroke-width:4px
-    style Handlers fill:#bfb,stroke:#333,stroke-width:4px
+    All -->|Log| LS
+
+    style IDB fill:#bfb,stroke:#333,stroke-width:2px
+    style KV fill:#fbb,stroke:#333,stroke-width:2px
+    style MS fill:#bbf,stroke:#333,stroke-width:2px
+    style LS fill:#fbf,stroke:#333,stroke-width:2px
 ```
 
 ## System States
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
-    Idle --> Processing: Receive Request
+    [*] --> Initializing
+    Initializing --> Ready: All Components Healthy
+    Initializing --> Degraded: Some Components Failed
     
-    state Processing {
-        [*] --> Authentication
-        Authentication --> RateLimitCheck
-        RateLimitCheck --> DataValidation
-        DataValidation --> DataProcessing
-        DataProcessing --> ResponsePreparation
-    }
+    Ready --> Degraded: Component Failure
+    Degraded --> Ready: Components Recovered
     
-    Processing --> Idle: Send Response
-    Processing --> Error: Failure
-    Error --> Idle: Error Response
+    Ready --> RateLimited: Too Many Requests
+    RateLimited --> Ready: Window Reset
     
-    state Error {
-        [*] --> LogError
-        LogError --> PrepareErrorResponse
-    }
+    Ready --> Processing: Request Received
+    Processing --> Ready: Request Complete
+    Processing --> Failed: Request Error
+    Failed --> Ready: Error Logged
+    
+    Ready --> Maintenance: Update Started
+    Maintenance --> Ready: Update Complete
+    
+    Degraded --> Down: Critical Failure
+    Down --> Initializing: System Restart
+```
+
+## Validation Flow
+
+```mermaid
+graph TD
+    Request[Request] -->|Extract| Data[Request Data]
+    Data -->|Parse| JSON[JSON Data]
+    JSON -->|Validate| Schema[Schema Validation]
+    
+    subgraph Schema Validation
+        Required[Check Required Fields]
+        Types[Validate Types]
+        Ranges[Check Ranges]
+        Extra[Check Extra Fields]
+    end
+    
+    Schema -->|Valid| Process[Process Request]
+    Schema -->|Invalid| Error[Return Error]
+    
+    style Request fill:#f9f,stroke:#333,stroke-width:2px
+    style Schema fill:#bbf,stroke:#333,stroke-width:2px
+    style Process fill:#bfb,stroke:#333,stroke-width:2px
+    style Error fill:#fbb,stroke:#333,stroke-width:2px

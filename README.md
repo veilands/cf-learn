@@ -11,6 +11,7 @@ A high-performance IoT backend service built with Cloudflare Workers, featuring 
 - **Structured Logging**: Comprehensive logging system with request tracking
 - **Authentication**: API key-based authentication
 - **Error Handling**: Detailed error responses with request tracing
+- **Validation**: Strict schema validation for all requests
 
 ## Architecture
 
@@ -38,10 +39,34 @@ X-API-Key: your-api-key
   },
   "readings": {
     "temperature": 22.5,
-    "humidity": 45
+    "humidity": 45,
+    "battery_voltage": 3.7
   },
   "metadata": {
-    "location": "room-1"
+    "location": "room-1",
+    "timestamp": "2025-01-05T12:00:00Z"
+  }
+}
+```
+
+### Metrics Endpoint
+```http
+GET /metrics
+X-API-Key: your-api-key
+
+Response:
+{
+  "timestamp": "2025-01-05T12:00:00Z",
+  "version": "5.2.2",
+  "status": {
+    "influxdb": {
+      "status": "healthy",
+      "latency": 282
+    },
+    "kv_store": {
+      "status": "healthy",
+      "latency": 226
+    }
   }
 }
 ```
@@ -64,12 +89,6 @@ GET /version
 X-API-Key: your-api-key
 ```
 
-### Metrics
-```http
-GET /metrics
-X-API-Key: your-api-key
-```
-
 ## Rate Limiting
 
 The API implements a sliding window rate limit:
@@ -80,136 +99,78 @@ The API implements a sliding window rate limit:
   - `X-RateLimit-Reset`: Time when the rate limit resets
   - `Retry-After`: Present when rate limit is exceeded
 
+## Validation
+
+All requests are validated using strict schemas:
+- Device measurements must include required fields (id, type, temperature)
+- Optional fields are validated when present (humidity, battery_voltage, location, timestamp)
+- No extra fields are allowed (strict mode)
+- Numbers must be within valid ranges (e.g., battery_voltage between 0-5V)
+- Timestamps must be valid ISO 8601 format
+
 ## Project Structure
 
 ```
 /
 ├── src/
 │   ├── handlers/           # Request handlers for each endpoint
-│   ├── middleware/         # Middleware (rate limiting, auth)
+│   ├── middleware/         # Middleware (validation, rate limiting, auth)
 │   ├── services/          # Core business logic
 │   │   ├── health.ts      # Health check service
 │   │   ├── logger.ts      # Logging service
 │   │   └── metrics.ts     # Metrics collection
 │   ├── types/             # TypeScript type definitions
 │   └── index.ts           # Main entry point
+├── docs/                  # Documentation
 ├── public/                # Static assets
-├── scripts/               # Utility scripts
-├── wrangler.toml         # Cloudflare Workers configuration
-└── package.json          # Project dependencies
-```
-
-## Environment Variables
-
-Required environment variables in `wrangler.toml`:
-
-```toml
-[vars]
-JWT_SECRET = "your-secret"
-ACCESS_TOKEN_EXPIRES = "1800"
-REFRESH_TOKEN_EXPIRES = "2592000"
-INFLUXDB_URL = "your-influxdb-url"
-INFLUXDB_TOKEN = "your-influxdb-token"
-INFLUXDB_ORG = "your-org"
-INFLUXDB_BUCKET = "your-bucket"
-```
-
-## KV Namespaces
-
-The service uses two KV namespaces:
-- `API_KEYS`: Stores valid API keys
-- `METRICS`: Stores rate limiting and usage metrics
-
-## Logging
-
-The service implements structured JSON logging with the following levels:
-- `debug`: Detailed debugging information
-- `info`: General operational information
-- `warn`: Warning messages for potential issues
-- `error`: Error messages with stack traces
-
-Each log entry includes:
-- Timestamp
-- Log level
-- Message
-- Request ID (for request tracing)
-- Additional context data
-- Error details (for error logs)
-
-Example log entry:
-```json
-{
-  "level": "info",
-  "message": "Processing measurement request",
-  "timestamp": "2025-01-04T22:36:49.116Z",
-  "requestId": "99d7cf46-0df5-48a4-a6b5-81a7f9a0eec0",
-  "data": {
-    "deviceId": "test-device-1",
-    "deviceType": "sensor"
-  }
-}
+└── scripts/               # Utility scripts
 ```
 
 ## Development
 
-1. Install dependencies:
-```bash
-npm install
-```
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Create a `wrangler.toml` file with your configuration:
+   ```toml
+   name = "your-worker-name"
+   main = "src/index.ts"
+   compatibility_date = "2023-01-01"
 
-2. Configure environment variables in `wrangler.toml`
+   kv_namespaces = [
+     { binding = "API_KEYS", id = "your-kv-id" },
+     { binding = "METRICS", id = "your-kv-id" }
+   ]
 
-3. Start local development:
-```bash
-npm run dev
-```
-
-4. Deploy to Cloudflare Workers:
-```bash
-npm run deploy
-```
+   [vars]
+   INFLUXDB_URL = "your-influxdb-url"
+   INFLUXDB_ORG = "your-org"
+   INFLUXDB_BUCKET = "your-bucket"
+   ```
+4. Add your secrets: `npx wrangler secret put INFLUXDB_TOKEN`
+5. Deploy: `npx wrangler deploy`
 
 ## Testing
 
-Run tests:
+Run the provided test suite:
 ```bash
 npm test
 ```
 
-## Error Handling
+## Monitoring
 
-The API returns structured error responses:
-```json
-{
-  "error": "Error Type",
-  "message": "Detailed error message",
-  "requestId": "unique-request-id"
-}
-```
-
-Common HTTP status codes:
-- `201`: Resource created successfully
-- `400`: Bad request (invalid input)
-- `401`: Unauthorized (invalid API key)
-- `429`: Too many requests (rate limit exceeded)
-- `500`: Internal server error
-
-## Security
-
-- API key authentication required for all endpoints
-- Rate limiting prevents abuse
-- Sensitive data stored in KV namespaces
-- HTTPS enforced for all requests
-- API keys must be sent via `X-API-Key` header
-
-## License
-
-MIT License
+Monitor your worker's health and performance:
+1. Check the `/metrics` endpoint for real-time metrics
+2. Use the `/health` endpoint for component health status
+3. Review logs in Cloudflare dashboard
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
+2. Create your feature branch
+3. Commit changes (this will automatically bump version)
+4. Push to your fork
 5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
