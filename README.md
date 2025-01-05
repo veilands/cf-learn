@@ -102,6 +102,26 @@ Response:
    npx wrangler secret put INFLUXDB_TOKEN
    ```
 
+### Setting up Cloudflare API Token
+
+1. Go to [Cloudflare Dashboard > API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. Click "Create Token"
+3. Choose "Create Custom Token"
+4. Set the following permissions:
+   - Account Resources:
+     - Workers Scripts: Edit
+     - Workers Routes: Edit
+     - Workers KV Storage: Edit
+   - Zone Resources:
+     - Zone Settings: Read
+     - Workers Routes: Edit
+     - All Zones: Edit (required for managing routes across zones)
+5. Set appropriate IP Address Filtering and TTL if desired
+6. Create token and copy it
+7. Add the token to GitHub Secrets as `CF_API_TOKEN`
+
+> Note: The "All Zones" permission is required to manage Workers routes across all zones in your account. Without this permission, you may see warnings about limited route management capabilities.
+
 ### Local Development Setup
 
 1. Copy the example configuration:
