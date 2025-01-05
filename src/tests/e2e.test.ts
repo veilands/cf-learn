@@ -3,6 +3,25 @@ import { describe, it, expect, beforeAll } from 'vitest';
 const API_URL = 'https://simple-backend.veilands.workers.dev'; 
 const API_KEY = 'my_api_key_12345';
 
+interface MetricsResponse {
+  timestamp: string;
+  version: string;
+  status: {
+    influxdb: {
+      status: string;
+    };
+    kv_store: {
+      status: string;
+    };
+  };
+}
+
+interface MeasurementResponse {
+  success: boolean;
+  message: string;
+  measurement_id: string;
+}
+
 describe('API E2E Tests', () => {
   describe('Metrics Endpoint', () => {
     it('should return metrics with valid API key', async () => {
@@ -13,7 +32,7 @@ describe('API E2E Tests', () => {
       });
       
       expect(response.status).toBe(200);
-      const data = await response.json();
+      const data = await response.json() as MetricsResponse;
       
       expect(data).toHaveProperty('timestamp');
       expect(data).toHaveProperty('version');
@@ -37,6 +56,8 @@ describe('API E2E Tests', () => {
       expect(response.headers.get('x-ratelimit-limit')).toBe('100');
       expect(response.headers.get('x-ratelimit-remaining')).toBeDefined();
       expect(response.headers.get('x-ratelimit-reset')).toBeDefined();
+      
+      const data = await response.json() as MetricsResponse;
     });
   });
 
@@ -63,7 +84,7 @@ describe('API E2E Tests', () => {
       });
 
       expect(response.status).toBe(201);
-      const data = await response.json();
+      const data = await response.json() as MeasurementResponse;
       expect(data).toEqual({ success: true });
     });
 

@@ -4,6 +4,19 @@ import { validateHttpMethod, createErrorResponse } from '../middleware/validatio
 import Logger from '../services/logger';
 import { withCache } from '../middleware/cache';
 
+interface MetricsResponse {
+  timestamp: string;
+  version: string;
+  status: {
+    influxdb: {
+      status: 'healthy' | 'degraded' | 'unhealthy';
+    };
+    kv_store: {
+      status: 'healthy' | 'degraded' | 'unhealthy';
+    };
+  };
+}
+
 async function handleHealthCheckInternal(request: Request, env: Env): Promise<Response> {
   const start = Date.now();
   const requestId = crypto.randomUUID();
@@ -29,7 +42,7 @@ async function handleHealthCheckInternal(request: Request, env: Env): Promise<Re
 
     // Get metrics response
     const metricsResponse = await handleMetrics(request, env);
-    const metrics = await metricsResponse.json();
+    const metrics = await metricsResponse.json() as MetricsResponse;
 
     // Determine overall health status
     let status = 'healthy';

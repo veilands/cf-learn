@@ -3,7 +3,8 @@ import { validateHttpMethod } from '../middleware/validation';
 import { withCache } from '../middleware/cache';
 
 async function handleVersionRequestInternal(request: Request): Promise<Response> {
-  const methodError = validateHttpMethod(request, ['GET']);
+  const requestId = crypto.randomUUID();
+  const methodError = validateHttpMethod(request, ['GET'], requestId);
   if (methodError) return methodError;
 
   return new Response(versionInfo.version, {
