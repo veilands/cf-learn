@@ -79,9 +79,17 @@ async function handleHealthCheckInternal(request: Request, env: Env): Promise<Re
       }
     });
 
-    return new Response(JSON.stringify(health), {
+    // Return health status
+    return new Response(JSON.stringify({
+      status,
+      version: metrics.version,
+      timestamp: new Date().toISOString()
+    }), {
       status: statusCode,
-      headers: { 'Content-Type': 'application/json' }
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=30'
+      }
     });
   } catch (error) {
     const duration_ms = Date.now() - start;

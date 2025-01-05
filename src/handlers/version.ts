@@ -9,7 +9,11 @@ async function handleVersionRequestInternal(request: Request, env: Env): Promise
   if (methodError) return methodError;
 
   return new Response(versionInfo.version, {
-    headers: { 'Content-Type': 'text/plain' }
+    status: 200,
+    headers: new Headers({
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'public, max-age=3600'
+    })
   });
 }
 

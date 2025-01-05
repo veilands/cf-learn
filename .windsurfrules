@@ -14,4 +14,5 @@ This is backend for IoT project where we are using
 - there is a public folder for static assets which are served by cloudflare workers
 - for API testing we use API key - my_api_key_12345
 - we don't use local wrangler dev server instead we use cloudflare workers, before testing we need to deploy the worker
-- All validations are done in middleware
+- All validations are done in middleware and not in handler
+- we use vitest for testing

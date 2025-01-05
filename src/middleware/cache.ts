@@ -65,9 +65,18 @@ export async function getCachedResponse(
     
     if (cachedResponse) {
       const { body, init } = JSON.parse(cachedResponse);
-      const response = new Response(body, init);
-      response.headers.set('X-Cache', 'HIT');
-      return response;
+      const headers = new Headers(init.headers);
+      headers.set('X-Cache', 'HIT');
+      
+      // Ensure Cache-Control header is preserved
+      if (!headers.has('Cache-Control')) {
+        headers.set('Cache-Control', `public, max-age=${cacheDuration}`);
+      }
+
+      return new Response(body, {
+        ...init,
+        headers
+      });
     }
   } catch (error) {
     Logger.warn('Cache retrieval failed', {
@@ -124,12 +133,18 @@ export async function cacheResponse(
     );
 
     // Add cache headers to response
-    const headers = new Headers(response.headers);
-    headers.set('Cache-Control', `public, max-age=${cacheDuration}`);
+    const headers = new Headers(init.headers);
+    
+    // If the response already has a Cache-Control header, use it
+    const existingCacheControl = headers.get('Cache-Control');
+    if (!existingCacheControl) {
+      headers.set('Cache-Control', `public, max-age=${cacheDuration}`);
+    }
     headers.set('X-Cache', 'MISS');
 
     return new Response(body, {
-      ...init,
+      status: init.status,
+      statusText: init.statusText,
       headers
     });
   } catch (error) {

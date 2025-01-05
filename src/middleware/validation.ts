@@ -149,6 +149,20 @@ export function validateHttpMethod(
   return null;
 }
 
+// Content-type validation middleware
+export function validateContentType(request: Request, contentType: string, requestId?: string): Response | null {
+  const actualContentType = request.headers.get('content-type');
+  if (!actualContentType || !actualContentType.includes(contentType)) {
+    return createErrorResponse(
+      400,
+      'Bad Request',
+      `Content-Type must be ${contentType}`,
+      requestId
+    );
+  }
+  return null;
+}
+
 // Validation middleware
 export function validateRequest<T extends z.ZodType>(
   schema: T,

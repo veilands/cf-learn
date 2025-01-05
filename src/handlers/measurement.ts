@@ -1,5 +1,5 @@
 import { Env, Measurement } from '../types';
-import { validateHttpMethod, validateRequest, createErrorResponse, MeasurementRequestSchema } from '../middleware/validation';
+import { validateHttpMethod, validateRequest, createErrorResponse, MeasurementRequestSchema, validateContentType } from '../middleware/validation';
 import { recordMeasurement } from '../services/metrics';
 import Logger from '../services/logger';
 
@@ -24,6 +24,17 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
         method: request.method
       });
       return methodError;
+    }
+
+    // Validate content type
+    const contentTypeError = validateContentType(request, 'application/json', requestId);
+    if (contentTypeError) {
+      Logger.warn('Invalid content type for measurement endpoint', {
+        requestId,
+        endpoint,
+        contentType: request.headers.get('content-type')
+      });
+      return contentTypeError;
     }
 
     // Parse and validate request body

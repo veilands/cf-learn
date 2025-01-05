@@ -1,6 +1,6 @@
 # IoT Backend Service
 
-A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication and rate limiting.
+A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication, rate limiting, and intelligent caching.
 
 ## Features
 
@@ -11,6 +11,7 @@ A serverless IoT backend service built with Cloudflare Workers. This service pro
 - 🔄 Automatic Version Updates
 - 📝 Comprehensive Logging
 - 🧪 End-to-End Testing
+- 🚀 Intelligent Response Caching
 
 ## Architecture
 
@@ -22,6 +23,7 @@ graph TD
     Worker -->|Write| InfluxDB[InfluxDB]
     Worker -->|Validate| Auth[API Key Auth]
     Worker -->|Rate Limit| RateLimit[Rate Limiter]
+    Worker -->|Cache| Cache[Response Cache]
 ```
 
 ## API Endpoints
@@ -65,6 +67,73 @@ Response:
     "kv_store": "healthy"
   }
 }
+```
+
+### GET /health
+
+Get system health status. This endpoint is cached for 1 hour.
+
+```bash
+curl https://api.example.com/health \
+  -H "x-api-key: your_api_key"
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "version": "5.4.1",
+  "timestamp": "2025-01-05T16:40:40Z"
+}
+```
+
+### GET /version
+
+Get the current API version. This endpoint is cached for 1 hour.
+
+```bash
+curl https://api.example.com/version \
+  -H "x-api-key: your_api_key"
+```
+
+Response:
+```text
+5.4.1
+```
+
+### GET /time
+
+Get the current server time. This endpoint is not cached.
+
+```bash
+curl https://api.example.com/time \
+  -H "x-api-key: your_api_key"
+```
+
+Response:
+```text
+16:40:40
+```
+
+## Caching
+
+The service implements intelligent response caching to improve performance and reduce load:
+
+- `/health` endpoint: Cached for 1 hour
+- `/version` endpoint: Cached for 1 hour
+- `/metrics` endpoint: Not cached (real-time data)
+- `/time` endpoint: Not cached (real-time data)
+- `/measurement` endpoint: Not cached (write operation)
+
+Cache headers in responses:
+- `Cache-Control`: Indicates caching duration with `max-age`
+- `X-Cache`: Shows cache status (`HIT` or `MISS`)
+
+To bypass cache:
+```bash
+curl https://api.example.com/health \
+  -H "x-api-key: your_api_key" \
+  -H "Cache-Control: no-cache"
 ```
 
 ## Development
