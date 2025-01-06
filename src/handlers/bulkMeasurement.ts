@@ -1,8 +1,9 @@
 import { Env } from '../types';
-import { validateHttpMethod, validateContentType, validateRequest, MeasurementRequestSchema } from '../middleware/validation';
+import { validateHttpMethod, validateContentType, validateRequest, BulkMeasurementRequestSchema } from '../middleware/validation';
 import { Logger } from '../services/logger';
+import { sanitizeTag } from '../utils/influxdb';
 
-export async function handleMeasurementRequest(request: Request, env: Env): Promise<Response> {
+export async function handleBulkMeasurementRequest(request: Request, env: Env): Promise<Response> {
   const requestId = request.headers.get('x-request-id') || crypto.randomUUID();
   const startTime = Date.now();
 
@@ -11,7 +12,7 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
     const methodError = validateHttpMethod(request, ['POST'], requestId);
     if (methodError) return methodError;
 
-    // Validate API key first
+    // Validate API key
     const apiKey = request.headers.get('x-api-key');
     if (!apiKey) {
       return new Response(JSON.stringify({
@@ -43,29 +44,31 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       });
     }
 
-    // Validate measurement data
-    const validationResult = validateRequest(MeasurementRequestSchema, data, requestId);
+    // Validate bulk measurement data
+    const validationResult = validateRequest(BulkMeasurementRequestSchema, data, requestId);
     if (validationResult instanceof Response) {
       return validationResult;
     }
 
-    const measurement = validationResult;
+    const bulkData = validationResult;
 
-    // Store measurement in InfluxDB
+    // Store measurements in InfluxDB
     try {
-      const timestamp = measurement.timestamp || new Date().toISOString();
-      const tags = [
-        `device_name=${sanitizeTag(measurement.device_name)}`,
-        measurement.location ? `location=${sanitizeTag(measurement.location)}` : null
-      ].filter(Boolean).join(',');
+      // Build InfluxDB line protocol for all measurements
+      const lines = bulkData.measurements.map(measurement => {
+        const tags = [
+          `device_name=${sanitizeTag(bulkData.device_name)}`,
+          bulkData.location ? `location=${sanitizeTag(bulkData.location)}` : null
+        ].filter(Boolean).join(',');
 
-      const fields = [
-        `temperature=${measurement.temperature}`,
-        `humidity=${measurement.humidity}`,
-        `battery_voltage=${measurement.battery_voltage}`
-      ].join(',');
+        const fields = [
+          `temperature=${measurement.temperature}`,
+          `humidity=${measurement.humidity}`,
+          `battery_voltage=${measurement.battery_voltage}`
+        ].join(',');
 
-      const line = `iot_measurements,${tags} ${fields} ${new Date(timestamp).getTime() * 1000000}`;
+        return `iot_measurements,${tags} ${fields} ${new Date(measurement.timestamp).getTime() * 1000000}`;
+      }).join('\n');
 
       // Send data to InfluxDB
       const response = await fetch(`${env.INFLUXDB_URL}/api/v2/write?org=${env.INFLUXDB_ORG}&bucket=${env.INFLUXDB_BUCKET}&precision=ns`, {
@@ -74,7 +77,7 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
           'Authorization': `Token ${env.INFLUXDB_TOKEN}`,
           'Content-Type': 'text/plain'
         },
-        body: line
+        body: lines
       });
 
       if (!response.ok) {
@@ -83,9 +86,10 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       }
 
       const duration = Date.now() - startTime;
-      Logger.info('Measurement stored successfully', {
+      Logger.info('Bulk measurements stored successfully', {
         requestId,
-        device_name: measurement.device_name,
+        device_name: bulkData.device_name,
+        measurement_count: bulkData.measurements.length,
         duration_ms: duration,
         cf: {
           colo: request.cf?.colo,
@@ -99,7 +103,7 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       return new Response(JSON.stringify({
         success: true,
         requestId,
-        timestamp,
+        measurement_count: bulkData.measurements.length,
         duration_ms: duration
       }), {
         status: 201,
@@ -109,14 +113,15 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
         })
       });
     } catch (error) {
-      Logger.error('Failed to store measurement', { 
+      Logger.error('Failed to store bulk measurements', { 
         requestId, 
         error,
-        device_name: measurement.device_name
+        device_name: bulkData.device_name,
+        measurement_count: bulkData.measurements.length
       });
       return new Response(JSON.stringify({
         error: 'Internal Server Error',
-        message: 'Failed to store measurement',
+        message: 'Failed to store measurements',
         requestId
       }), {
         status: 500,
@@ -127,7 +132,7 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       });
     }
   } catch (error) {
-    Logger.error('Measurement handler error', { requestId, error });
+    Logger.error('Bulk measurement handler error', { requestId, error });
     return new Response(JSON.stringify({
       error: 'Internal Server Error',
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -140,13 +145,4 @@ export async function handleMeasurementRequest(request: Request, env: Env): Prom
       })
     });
   }
-}
-
-// Sanitize strings for InfluxDB line protocol
-function sanitizeTag(value: string): string {
-  return value
-    .replace(/,/g, '\\,')
-    .replace(/ /g, '\\ ')
-    .replace(/=/g, '\\=')
-    .replace(/"/g, '\\"');
 }

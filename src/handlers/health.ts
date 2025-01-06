@@ -1,117 +1,53 @@
-import { Env } from '../types';
-import { handleMetrics } from './metrics';
-import { validateHttpMethod, createErrorResponse } from '../middleware/validation';
-import { Logger } from '../services/logger';
-import { withCache } from '../middleware/cache';
+import { Env, HealthResponse, HealthStatus } from '../types';
+import { validateHttpMethod } from '../middleware/validation';
+import { checkKVStore, checkInfluxDB } from '../services/health';
+import { version } from '../version.json';
 
-interface MetricsResponse {
-  timestamp: string;
-  version: string;
-  status: {
-    influxdb: {
-      status: 'healthy' | 'degraded' | 'unhealthy';
-    };
-    kv_store: {
-      status: 'healthy' | 'degraded' | 'unhealthy';
-    };
-  };
-}
-
-async function handleHealthCheckInternal(request: Request, env: Env): Promise<Response> {
-  const start = Date.now();
+export async function handleHealthRequest(request: Request, env: Env): Promise<Response> {
   const requestId = crypto.randomUUID();
-  const endpoint = '/health';
-
   try {
-    Logger.info('Processing health check request', {
-      requestId,
-      endpoint,
-      method: request.method
-    });
-
-    // Validate HTTP method
     const methodError = validateHttpMethod(request, ['GET'], requestId);
-    if (methodError) {
-      Logger.warn('Invalid method for health endpoint', {
-        requestId,
-        endpoint,
-        method: request.method
-      });
-      return methodError;
-    }
+    if (methodError) return methodError;
 
-    // Get metrics response
-    const metricsResponse = await handleMetrics(request, env);
-    const metrics = await metricsResponse.json() as MetricsResponse;
+    // Check KV store health
+    const kvStatus = await checkKVStore(env);
 
-    // Determine overall health status
-    let status = 'healthy';
-    if (metrics.status.influxdb.status === 'unhealthy' || metrics.status.kv_store.status === 'unhealthy') {
-      status = 'unhealthy';
-    } else if (metrics.status.influxdb.status === 'degraded' || metrics.status.kv_store.status === 'degraded') {
-      status = 'degraded';
-    }
+    // Check InfluxDB health
+    const influxStatus = await checkInfluxDB(env);
 
-    const health = {
-      status,
-      timestamp: metrics.timestamp,
-      version: metrics.version,
+    const timestamp = new Date().toISOString();
+
+    const systemStatus: HealthStatus = kvStatus.status === 'healthy' && influxStatus.status === 'healthy' 
+      ? 'healthy' 
+      : 'degraded';
+
+    const response: HealthResponse = {
+      status: systemStatus,
+      timestamp,
+      version,
       dependencies: {
-        influxdb: metrics.status.influxdb,
-        kv_store: metrics.status.kv_store
+        influxdb: influxStatus,
+        kv_store: kvStatus
       }
     };
 
-    const statusCode = status === 'healthy' ? 200 : 
-                      status === 'degraded' ? 200 : 503;
-
-    const duration_ms = Date.now() - start;
-    Logger.request({
-      requestId,
-      method: request.method,
-      endpoint,
-      status: statusCode,
-      duration_ms,
-      data: {
-        health_status: status,
-        influxdb_status: metrics.status.influxdb.status,
-        kv_status: metrics.status.kv_store.status
-      }
-    });
-
-    // Return health status
-    return new Response(JSON.stringify({
-      status,
-      version: metrics.version,
-      timestamp: new Date().toISOString()
-    }), {
-      status: statusCode,
-      headers: {
+    return new Response(JSON.stringify(response), {
+      status: systemStatus === 'healthy' ? 200 : 503,
+      headers: new Headers({
         'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=30'
-      }
+        'Cache-Control': 'max-age=60'
+      })
     });
   } catch (error) {
-    const duration_ms = Date.now() - start;
-    Logger.error('Health check failed', {
-      requestId,
-      endpoint,
-      method: request.method,
-      error,
-      data: { duration_ms }
-    });
-
-    return createErrorResponse(
-      503,
-      'Service Unavailable',
-      'Health check failed',
+    return new Response(JSON.stringify({ 
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error',
       requestId
-    );
+    }), {
+      status: 500,
+      headers: new Headers({
+        'Content-Type': 'application/json'
+      })
+    });
   }
 }
-
-// Cache health endpoint for 30 seconds to avoid hammering dependencies
-export const handleHealthCheck = withCache(handleHealthCheckInternal, {
-  cacheDuration: 30, // 30 seconds
-  cacheBypass: 'no-cache' // Allow bypass with Cache-Control: no-cache
-});

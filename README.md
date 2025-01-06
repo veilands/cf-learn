@@ -1,348 +1,314 @@
-# IoT Backend Service
+# IoT Backend Service ![Version](https://img.shields.io/badge/version-5.5.0-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
 A serverless IoT backend service built with Cloudflare Workers. This service provides endpoints for device measurements and system metrics, with built-in API key authentication, rate limiting via Durable Objects, and intelligent caching.
 
+## Table of Contents
+- [Features](#features)
+- [Architecture](#architecture)
+- [Security](#security)
+- [API Documentation](#api-documentation)
+- [Development](#development)
+- [Monitoring](#monitoring)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Features
 
-- 🔐 API Key Authentication
-- 📊 Device Measurements Collection
-- 📈 System Health Metrics
-- ⚡ Durable Objects Rate Limiting
-- 🔄 Automatic Version Updates
-- 📝 Comprehensive Request Logging
-- 🧪 End-to-End Testing
-- 🚀 Generic KV Caching
-- 🔍 Performance Monitoring
-- 📋 Request Tracing
+- 🔐 **Enhanced Security**
+  - API Key Authentication
+  - Content Security Policy (CSP)
+  - HTTP Security Headers
+  - Rate Limiting with Durable Objects
+  
+- 📊 **Core Functionality**
+  - Single and Bulk Device Measurements
+  - System Health Metrics
+  - Performance Monitoring
+  - Version Control
+  
+- ⚡ **Cloudflare Optimizations**
+  - Edge Caching
+  - Early Hints
+  - HTTP/2 Server Push
+  - Bot Management
+  
+- 📝 **Observability**
+  - Comprehensive Request Logging
+  - Performance Metrics
+  - Request Tracing
+  - Error Tracking
 
 ## Architecture
 
 ```mermaid
 graph TD
     Device[IoT Device] -->|POST /measurement| Worker[Cloudflare Worker]
+    Device -->|POST /measurements/bulk| Worker
     Monitor[Monitoring System] -->|GET /metrics| Worker
     Worker -->|Store| KV[Cloudflare KV]
-    Worker -->|Write| InfluxDB[InfluxDB]
+    Worker -->|Batch Write| InfluxDB[InfluxDB]
     Worker -->|Validate| Auth[API Key Auth]
     Worker -->|Rate Limit| RateLimit[Durable Objects]
-    Worker -->|Cache| Cache[KV Cache]
+    Worker -->|Cache| Cache[Edge Cache]
     Worker -->|Log| Logger[Request Logger]
+    Worker -->|Headers| Security[Security Headers]
     Logger -->|Track| Metrics[Performance Metrics]
 ```
 
-## Request Logging
+## Security
 
-The service implements comprehensive request logging for monitoring and debugging:
+### Headers
+- Content Security Policy (CSP)
+- X-Content-Type-Options
+- X-Frame-Options
+- X-XSS-Protection
+- Referrer-Policy
+- Permissions-Policy
 
-### Log Data Captured
-- Request ID (for tracing)
-- HTTP method and endpoint
-- Client information (IP, user agent)
-- Request duration
-- Response status code
-- Cache status
-- Rate limit status
-- Error details (if any)
+### Authentication
+- API key validation
+- Rate limiting per key
+- Request signing (optional)
 
-### Log Levels
-- `INFO`: Successful requests
-- `WARN`: Authentication/validation failures
-- `ERROR`: System errors and exceptions
+### Performance Headers
+- Early Hints (103)
+- HTTP/2 Server Push
+- Cache-Control directives
+- Edge caching configuration
 
-### Response Headers
-All responses include:
-- `x-request-id`: Unique request identifier
-- `x-ratelimit-*`: Rate limiting information
-- `Cache-Control`: Caching directives
-- `Content-Type`: Response format
+## API Documentation
 
-### Sample Log Output
-```json
-{
-  "timestamp": "2025-01-05T19:02:17Z",
-  "level": "info",
-  "message": "Request completed",
-  "requestId": "f1004c09-7f9b-4906-ac4f-16800eed7757",
-  "method": "GET",
-  "endpoint": "/metrics",
-  "status": 200,
-  "duration_ms": 163,
-  "clientIp": "192.0.2.1",
-  "userAgent": "curl/7.88.1",
-  "cacheStatus": "MISS"
-}
+### Base URL
+```
+https://api.pasts.dev
 ```
 
-## API Endpoints
-
-### POST /measurement
-
-Submit device measurements.
-
+### Authentication
+All endpoints (except `/health`, `/time`) require API key authentication:
 ```bash
-curl -X POST https://simple-backend.veilands.workers.dev/measurement \
+curl -H "x-api-key: YOUR_API_KEY" https://api.pasts.dev/endpoint
+```
+
+### Rate Limiting
+- 100 requests per minute per API key
+- Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- Bulk measurements count as single request
+
+### Endpoints
+
+#### POST /measurement
+Submit a single device measurement
+```bash
+curl -X POST https://api.pasts.dev/measurement \
+  -H "x-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -H "x-api-key: my_api_key_12345" \
   -d '{
-    "device": {
-      "id": "device-123",
-      "type": "sensor"
-    },
-    "readings": {
-      "temperature": 25.5,
-      "humidity": 60
-    }
+    "device_name": "device-123",
+    "location": "lab_room_1",
+    "battery_voltage": 3.7,
+    "temperature": 22.5,
+    "humidity": 45.2,
+    "timestamp": "2025-01-06T14:33:10Z"
   }'
 ```
 
-### GET /metrics
-
-Retrieve system metrics.
-
+#### POST /measurements/bulk
+Submit multiple measurements in a single request (up to 1000 measurements)
 ```bash
-curl https://simple-backend.veilands.workers.dev/metrics \
-  -H "x-api-key: my_api_key_12345"
+curl -X POST https://api.pasts.dev/measurements/bulk \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_name": "device-123",
+    "location": "lab_room_1",
+    "measurements": [
+      {
+        "battery_voltage": 3.7,
+        "temperature": 22.5,
+        "humidity": 45.2,
+        "timestamp": "2025-01-06T14:33:10Z"
+      },
+      {
+        "battery_voltage": 3.6,
+        "temperature": 22.7,
+        "humidity": 45.5,
+        "timestamp": "2025-01-06T14:33:20Z"
+      }
+    ]
+  }'
 ```
 
-Response:
-```json
-{
-  "timestamp": "2025-01-05T19:02:17Z",
-  "version": "5.4.4",
-  "status": {
-    "influxdb": {
-      "status": "healthy",
-      "latency": 162
-    },
-    "kv_store": {
-      "status": "healthy",
-      "latency": 200
-    }
-  }
-}
-```
-
-### GET /health
-
-Get system health status. This endpoint is cached for 30 seconds.
-
+#### GET /metrics
+Retrieve system metrics and statistics
 ```bash
-curl https://simple-backend.veilands.workers.dev/health
+curl -H "x-api-key: YOUR_API_KEY" https://api.pasts.dev/metrics
 ```
 
-Response:
-```json
-{
-  "status": "healthy",
-  "version": "5.4.4",
-  "timestamp": "2025-01-05T19:02:17Z"
-}
-```
+Response includes:
+- Request counts by endpoint
+- Success/error rates
+- Response times (avg, p95, p99)
+- Geographic distribution
+- Rate limit usage
+- InfluxDB statistics
+- Cache performance
 
-### GET /version
-
-Get the current API version. This endpoint is cached for 1 hour.
-
+#### GET /health
+Check system health
 ```bash
-curl https://simple-backend.veilands.workers.dev/version \
-  -H "x-api-key: my_api_key_12345"
+curl https://api.pasts.dev/health
 ```
 
-Response:
-```text
-5.4.4
-```
-
-### GET /time
-
-Get the current server time. This endpoint is not cached.
-
+#### GET /version
+Get API version
 ```bash
-curl https://simple-backend.veilands.workers.dev/time \
-  -H "x-api-key: my_api_key_12345"
+curl -H "x-api-key: YOUR_API_KEY" https://api.pasts.dev/version
 ```
 
-Response:
-```text
-9:02:17 PM
-```
-
-## Error Handling
-
-The API uses standard HTTP status codes and returns consistent error responses:
-
-### Error Response Format
-```json
-{
-  "error": "Error Type",
-  "message": "Human readable error message",
-  "requestId": "unique-request-id",
-  "timestamp": "2025-01-05T19:02:17Z"
-}
-```
-
-### Common Error Codes
-- `401 Unauthorized`: Missing or invalid API key
-- `429 Too Many Requests`: Rate limit exceeded
-- `400 Bad Request`: Invalid request format
-- `404 Not Found`: Endpoint doesn't exist
-- `500 Internal Server Error`: Server-side error
-
-### Error Logging
-All errors are automatically logged with:
-- Full error stack trace
-- Request context (method, endpoint, headers)
-- Client information
-- Request ID for correlation
-
-### Rate Limit Errors
-When rate limit is exceeded, response includes:
-```json
-{
-  "error": "Rate limit exceeded",
-  "message": "Too many requests",
-  "requestId": "67e228dd-e045-4e69-b2f0-526637c56b37",
-  "timestamp": "2025-01-05T19:02:17Z"
-}
-```
-Headers:
-```
-x-ratelimit-limit: 100
-x-ratelimit-remaining: 0
-x-ratelimit-reset: 1736103737
-```
-
-## Caching
-
-The service implements generic KV caching to improve performance and reduce load:
-
-- `/health` endpoint: Cached for 30 seconds
-- `/version` endpoint: Cached for 1 hour
-- `/metrics` endpoint: Not cached (real-time data)
-- `/time` endpoint: Not cached (real-time data)
-- `/measurement` endpoint: Not cached (write operation)
-
-Cache headers in responses:
-- `Cache-Control`: Indicates caching duration with `max-age`
-- `X-Cache`: Shows cache status (`HIT` or `MISS`)
-
-To bypass cache:
+#### GET /time
+Get current server time
 ```bash
-curl https://simple-backend.veilands.workers.dev/health \
-  -H "Cache-Control: no-cache"
+curl https://api.pasts.dev/time
 ```
+
+#### POST /cache/purge
+Purge specific endpoint data from cache
+```bash
+curl -X POST https://api.pasts.dev/cache/purge \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/version"
+  }'
+```
+
+#### POST /cache/warm
+Pre-warm cache for specific endpoints
+```bash
+curl -X POST https://api.pasts.dev/cache/warm \
+  -H "x-api-key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "endpoints": ["/version", "/health"]
+  }'
+```
+
+### Data Structure
+
+#### Common Fields
+These fields are required at the root level for both single and bulk measurements:
+- `device_name`: String (required) - Unique identifier for the IoT device
+- `location`: String (required) - Physical location of the device
+
+#### Measurement Fields
+For single measurements, these fields are at the root level. For bulk measurements, these are in each measurement object:
+- `battery_voltage`: Number (required) - Battery voltage in volts (0-5V)
+- `temperature`: Number (required) - Temperature in Celsius
+- `humidity`: Number (required) - Relative humidity percentage (0-100%)
+- `timestamp`: String (optional for single, required for bulk) - ISO 8601 timestamp
+
+#### Bulk Measurements Limits
+- Maximum 1000 measurements per request
+- All measurements must be from the same device and location
+- Each measurement must include all required fields
+- Timestamps must be in ISO 8601 format
+
+### Storage
+
+#### InfluxDB Integration
+- Data is stored in InfluxDB time-series database
+- Tags (indexed):
+  - device_name
+  - location
+- Fields (measurements):
+  - temperature
+  - humidity
+  - battery_voltage
+- Timestamps in nanosecond precision
+- Efficient batch writing for bulk measurements
 
 ## Development
 
 ### Prerequisites
-
-- Node.js >= 18
-- npm >= 9
-- Cloudflare account with Workers, KV, and Durable Objects enabled
-- InfluxDB instance
+- Node.js 18+
+- Wrangler CLI
 
 ### Setup
+```bash
+# Install dependencies
+npm install
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/veilands/cf-learn.git
-   cd cf-learn
-   ```
+# Configure environment
+cp .env.example .env
+# Edit .env with your values
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Configure environment:
-   ```bash
-   # Copy example configuration
-   cp wrangler.toml.example wrangler.toml
-
-   # Add your Cloudflare API token secret
-   npx wrangler secret put INFLUXDB_TOKEN
-   ```
-
-### Development Commands
-
-- `npm run deploy`: Deploy to Cloudflare Workers
-- `npm run test`: Run tests with Vitest
-- `npm run test:coverage`: Generate test coverage report
-- `npm run format`: Format code with Prettier
-- `npm run lint`: Lint code with ESLint
-- `npm run type-check`: Check TypeScript types
+# Deploy to Cloudflare
+wrangler deploy
+```
 
 ### Testing
-
-The project includes comprehensive tests using Vitest:
-
-#### Test Coverage
-- API endpoints
-- Authentication
-- Rate limiting with Durable Objects
-- Generic KV caching
-- Error handling
-- Request validation
-
-#### Running Tests
 ```bash
-# Run all tests
-npm run test
+# Run unit tests
+npm test
 
-# Run with coverage report
-npm run test:coverage
-
-# Run specific test file
-npm run test src/tests/rateLimiter.test.ts
+# Run integration tests
+npm run test:integration
 ```
 
-#### Shell Script Testing
-For quick API testing:
-```bash
-# Test all endpoints
-./test-endpoints.sh
+## Monitoring
 
-# Test rate limiting
-./test-rate-limit.sh
-```
+### Logging
+- Request/response details
+- Performance metrics
+- Error tracking
+- Security events
 
-### Monitoring and Debugging
-
-#### Request Tracing
-Every request can be traced using the `x-request-id` header:
-
-1. Find request ID in response headers
-2. Search logs using the request ID
-3. View complete request lifecycle
-
-#### Performance Monitoring
-Monitor API performance using:
-- Request duration metrics
-- Cache hit rates
-- Error rates
+### Metrics
+- Request counts by endpoint
+- Success/error rates
+- Response times (avg, p95, p99)
+- Geographic distribution
 - Rate limit usage
+- InfluxDB statistics
+- Cache performance
 
-#### Log Levels
-Configure log level in `wrangler.toml`:
-```toml
-[vars]
-LOG_LEVEL = "debug" # Options: debug, info, warn, error
-```
+### Debug Headers
+Development environment includes:
+- CF-Worker-Version
+- CF-Cache-Status
+- CF-Ray
+- Server-Timing
 
-### Deployment
+## Caching
 
-1. Build and deploy:
-   ```bash
-   npm run deploy
-   ```
+### Edge Cache
+- Automatic caching of GET requests
+- Cache duration configurable per endpoint
+- Cache-Control headers for client-side caching
+- Supports cache purging and warming
+- Geographic distribution via Cloudflare's network
 
-2. Verify deployment:
-   ```bash
-   curl https://simple-backend.veilands.workers.dev/health
-   ```
+### Cache Management
+- Purge specific endpoints from cache
+- Pre-warm cache for improved performance
+- Cache status monitoring via metrics
+- Automatic cache invalidation on deployments
+- Cache bypass with appropriate headers
 
-3. Monitor logs in Cloudflare Dashboard
+### Purgeable Endpoints
+The following endpoints support cache purging and warming:
+- `/version`
+- `/health`
+- `/time`
+
+### Cache Headers
+- `CF-Cache-Status`: Cache hit/miss status
+- `Cache-Control`: Cache duration and directives
+- `ETag`: Content versioning
+- `Last-Modified`: Content freshness
+
+## Contributing
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
-
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

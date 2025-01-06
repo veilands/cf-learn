@@ -1,6 +1,18 @@
-import { Env, HealthStatus } from '../types';
+import { Env, DependencyStatus } from '../types';
+import { Logger } from './logger';
 
-export async function checkInfluxDB(env: Env): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; latency: number; message?: string }> {
+type HealthStatus = {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latency: number;
+  message?: string;
+};
+
+interface InfluxDBHealthResponse {
+  status: 'pass' | 'fail';
+  message?: string;
+}
+
+export async function checkInfluxDB(env: Env): Promise<DependencyStatus> {
   const start = Date.now();
   try {
     if (!env.INFLUXDB_TOKEN) {
@@ -12,65 +24,77 @@ export async function checkInfluxDB(env: Env): Promise<{ status: 'healthy' | 'de
     }
 
     // Use the write endpoint to check if we can write data
-    const response = await fetch(
-      `${env.INFLUXDB_URL}/api/v2/write?org=${env.INFLUXDB_ORG}&bucket=${env.INFLUXDB_BUCKET}&precision=ns`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${env.INFLUXDB_TOKEN}`,
-          'Content-Type': 'text/plain'
-        },
-        body: 'health_check,service=api value=1',
-        signal: AbortSignal.timeout(3000) // Add 3-second timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+
+    try {
+      const response = await fetch(
+        `${env.INFLUXDB_URL}/api/v2/write?org=${env.INFLUXDB_ORG}&bucket=${env.INFLUXDB_BUCKET}&precision=ns`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Token ${env.INFLUXDB_TOKEN}`,
+            'Content-Type': 'text/plain'
+          },
+          body: 'health_check,service=api value=1',
+          signal: controller.signal
+        }
+      );
+
+      const latency = Date.now() - start;
+
+      if (!response.ok) {
+        const text = await response.text();
+        return {
+          status: 'unhealthy',
+          latency,
+          message: `HTTP ${response.status}: ${text}`
+        };
       }
-    );
 
-    const latency = Date.now() - start;
+      if (latency > 1000) {
+        return {
+          status: 'degraded',
+          latency,
+          message: 'High latency'
+        };
+      }
 
-    if (!response.ok) {
-      const text = await response.text();
       return {
-        status: 'unhealthy',
-        latency,
-        message: `HTTP ${response.status}: ${text}`
+        status: 'healthy',
+        latency
       };
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    if (latency > 1000) {
-      return {
-        status: 'degraded',
-        latency,
-        message: 'High latency'
-      };
-    }
-
-    return {
-      status: 'healthy',
-      latency
-    };
   } catch (error) {
+    const latency = Date.now() - start;
+    Logger.error('InfluxDB health check failed', { error });
     return {
       status: 'unhealthy',
-      latency: Date.now() - start,
+      latency,
       message: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 }
 
-export async function checkKVStore(env: Env): Promise<{ status: 'healthy' | 'degraded' | 'unhealthy'; latency: number; message?: string }> {
+export async function checkKVStore(env: Env): Promise<DependencyStatus> {
   const start = Date.now();
-  const testKey = 'health_check_test';
-
   try {
-    await env.METRICS.put(testKey, 'test', { expirationTtl: 60 });
-    const value = await env.METRICS.get(testKey);
-    const latency = Date.now() - start;
+    const testKey = 'health_check';
+    const testValue = 'ok';
+    
+    await env.API_KEYS.put(testKey, testValue, { expirationTtl: 60 });
+    const value = await env.API_KEYS.get(testKey);
+    await env.API_KEYS.delete(testKey);
 
-    if (value !== 'test') {
+    const latency = Date.now() - start;
+    
+    if (value !== testValue) {
       return {
         status: 'unhealthy',
         latency,
-        message: 'KV store read/write mismatch'
+        message: 'KV store read/write test failed'
       };
     }
 
@@ -87,9 +111,57 @@ export async function checkKVStore(env: Env): Promise<{ status: 'healthy' | 'deg
       latency
     };
   } catch (error) {
+    const latency = Date.now() - start;
+    Logger.error('KV health check failed', { error });
     return {
       status: 'unhealthy',
-      latency: Date.now() - start,
+      latency,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+export async function checkInfluxDBHealth(env: Env): Promise<DependencyStatus> {
+  const start = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+    try {
+      const response = await fetch(`${env.INFLUXDB_URL}/health`, {
+        headers: {
+          'Authorization': `Token ${env.INFLUXDB_TOKEN}`
+        },
+        signal: controller.signal
+      });
+
+      const latency = Date.now() - start;
+
+      if (!response.ok) {
+        const error = await response.text();
+        return {
+          status: 'degraded',
+          latency,
+          message: `InfluxDB health check failed: ${error}`
+        };
+      }
+
+      const data = await response.json() as InfluxDBHealthResponse;
+      
+      return {
+        status: data.status === 'pass' ? 'healthy' : 'degraded',
+        latency,
+        message: data.status !== 'pass' ? `InfluxDB status: ${data.status}` : undefined
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (error) {
+    const latency = Date.now() - start;
+    Logger.error('InfluxDB health check failed', { error });
+    return {
+      status: 'degraded',
+      latency,
       message: error instanceof Error ? error.message : 'Unknown error'
     };
   }

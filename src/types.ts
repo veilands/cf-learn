@@ -45,3 +45,13 @@ export interface MetricsResponse {
     kv_store: DependencyStatus;
   };
 }
+
+export interface RateLimitResult {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  reset: number;
+  resetTime?: number;
+  error?: string;
+  message?: string;
+}

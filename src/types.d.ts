@@ -18,6 +18,16 @@ interface DurableObject {
   fetch(request: Request): Promise<Response>;
 }
 
+interface Env {
+  INFLUXDB_TOKEN: string;
+  INFLUXDB_URL: string;
+  INFLUXDB_ORG: string;
+  INFLUXDB_BUCKET: string;
+  RATE_LIMITER: DurableObjectNamespace;
+  API_KEYS: KVNamespace;
+  CACHE: KVNamespace;
+}
+
 interface FetchEvent extends Event {
   request: Request;
   env: Env;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Logger } from '../services/logger';
+import { Env } from '../types';
 
 // Common schemas
 export const ApiKeySchema = z.object({
@@ -8,19 +9,23 @@ export const ApiKeySchema = z.object({
 
 // Request schemas
 export const MeasurementRequestSchema = z.object({
-  device: z.object({
-    id: z.string().min(1),
-    type: z.string().min(1)
-  }).strict(),
-  readings: z.object({
-    temperature: z.number(),
-    humidity: z.number().optional(),
-    battery_voltage: z.number().min(0).max(5).optional().describe('Battery voltage in volts (0-5V)')
-  }).strict(),
-  metadata: z.object({
-    location: z.string().optional(),
-    timestamp: z.string().datetime().optional()
-  }).strict().optional()
+  device_name: z.string().min(1).describe('IoT device name'),
+  location: z.string().min(1).describe('Device location'),
+  battery_voltage: z.number().min(0).max(5).describe('Battery voltage in volts (0-5V)'),
+  temperature: z.number().describe('Temperature in Celsius'),
+  humidity: z.number().min(0).max(100).describe('Relative humidity percentage (0-100%)'),
+  timestamp: z.string().datetime().optional().describe('ISO 8601 timestamp')
+}).strict();
+
+export const BulkMeasurementRequestSchema = z.object({
+  device_name: z.string().min(1).describe('IoT device name'),
+  location: z.string().min(1).describe('Device location'),
+  measurements: z.array(z.object({
+    battery_voltage: z.number().min(0).max(5).describe('Battery voltage in volts (0-5V)'),
+    temperature: z.number().describe('Temperature in Celsius'),
+    humidity: z.number().min(0).max(100).describe('Relative humidity percentage (0-100%)'),
+    timestamp: z.string().datetime().describe('ISO 8601 timestamp')
+  })).min(1).max(1000).describe('Array of measurements (max 1000 per request)')
 }).strict();
 
 // Response schemas
@@ -109,22 +114,21 @@ export interface ErrorResponse {
 // Create error response
 export function createErrorResponse(
   status: number,
-  requestId: string,
+  requestId: string | null | undefined,
   error: string,
   message?: string
 ): Response {
-  const errorResponse = {
-    error,
-    message,
-    requestId
-  };
-
-  return new Response(JSON.stringify(errorResponse), {
-    status,
-    headers: {
-      'Content-Type': 'application/json'
+  return new Response(
+    JSON.stringify({
+      error,
+      message: message || error,
+      requestId: requestId || 'unknown',
+    }),
+    {
+      status,
+      headers: { 'Content-Type': 'application/json' },
     }
-  });
+  );
 }
 
 // HTTP method validation middleware
@@ -146,7 +150,8 @@ export function validateHttpMethod(
 
 // Content-type validation middleware
 export function validateContentType(request: Request, contentType: string, requestId?: string): Response | null {
-  if (request.headers.get('content-type') !== contentType) {
+  const requestContentType = request.headers.get('content-type');
+  if (!requestContentType || !requestContentType.includes(contentType)) {
     return createErrorResponse(
       400,
       requestId,
@@ -158,104 +163,57 @@ export function validateContentType(request: Request, contentType: string, reque
 }
 
 // Validation middleware
-export function validateRequest<T extends z.ZodType>(
+export function validateRequest<T extends z.ZodSchema>(
   schema: T,
   data: unknown,
-  requestId: string
+  requestId: string | null | undefined
 ): Response | z.infer<T> {
-  try {
-    const result = schema.safeParse(data);
-    if (!result.success) {
-      Logger.warn('Validation failed', { 
-        requestId, 
-        errors: result.error.errors 
-      });
-      return createErrorResponse(
-        400,
-        requestId,
-        'Bad Request',
-        result.error.errors[0].message
-      );
-    }
-    return result.data;
-  } catch (error) {
-    Logger.error('Unexpected validation error', { 
-      requestId, 
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      } : error
-    });
+  const result = schema.safeParse(data);
+  if (!result.success) {
     return createErrorResponse(
-      500,
+      400,
       requestId,
-      'Internal Server Error',
-      'Validation failed: Unexpected error'
+      'Bad Request',
+      result.error.errors[0].message
     );
   }
+  return result.data;
 }
 
+// Response validation
 export function validateResponse<T>(
-  schema: z.ZodSchema<T>, 
-  data: unknown, 
-  requestId: string
+  schema: z.ZodSchema<T>,
+  data: unknown,
+  requestId: string | null | undefined
 ): Response | T {
-  try {
-    Logger.debug('Validating response', { requestId, data });
-    const result = schema.safeParse(data);
-    if (!result.success) {
-      Logger.error('Response validation failed', { 
-        requestId, 
-        errors: result.error.errors 
-      });
-      return createErrorResponse(
-        500,
-        requestId,
-        'Internal Server Error',
-        'Response validation failed'
-      );
-    }
-    Logger.debug('Response validation successful', { requestId });
-    return result.data;
-  } catch (error) {
-    Logger.error('Unexpected response validation error', { 
-      requestId, 
-      error: error instanceof Error ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      } : error
-    });
+  const result = schema.safeParse(data);
+  if (!result.success) {
     return createErrorResponse(
       500,
       requestId,
       'Internal Server Error',
-      'Response validation failed: Unexpected error'
+      'Invalid response format'
     );
   }
+  return result.data;
 }
 
-// Helper to extract and validate API key
 export async function validateApiKey(
-  apiKey: string | null,
-  env: Env,
-  requestId: string
+  request: Request,
+  env: Env
 ): Promise<Response | null> {
+  const apiKey = request.headers.get('x-api-key');
   if (!apiKey) {
-    Logger.warn('Missing API key', { requestId });
-    return createErrorResponse(401, requestId, 'Unauthorized', 'API key required');
+    return createErrorResponse(401, request.headers.get('x-request-id') || 'unknown', 'Unauthorized', 'Missing API key');
   }
 
   try {
     const isValid = await env.API_KEYS.get(apiKey);
     if (!isValid) {
-      Logger.warn('Invalid API key', { requestId, apiKey });
-      return createErrorResponse(401, requestId, 'Unauthorized', 'Invalid API key');
+      return createErrorResponse(401, request.headers.get('x-request-id') || 'unknown', 'Unauthorized', 'Invalid API key');
     }
     return null;
   } catch (error) {
-    Logger.error('API key validation failed', { requestId, apiKey, error });
-    return createErrorResponse(500, requestId, 'Internal Server Error');
+    return createErrorResponse(500, request.headers.get('x-request-id') || 'unknown', 'Internal Server Error', 'API key validation failed');
   }
 }

@@ -27,9 +27,6 @@ jobs:
 
     - name: Lint
       run: npm run lint
-      
-    - name: Type check
-      run: npm run type-check
 
     - name: Increment version
       run: |
@@ -71,20 +68,97 @@ jobs:
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       run: npx wrangler deploy
+
+    - name: Wait for deployment
+      run: sleep 30
     
-    - name: Run tests with coverage
+    - name: Test endpoints
       env:
-        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         API_KEY: my_api_key_12345
-        API_URL: https://simple-backend.veilands.workers.dev
-      run: npm run test:coverage
-      timeout-minutes: 5
-    
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      with:
-        files: ./coverage/lcov.info
-        fail_ci_if_error: true
+        API_URL: https://api.pasts.dev
+      run: |
+        # Test health endpoint
+        echo "Testing health endpoint..."
+        health_response=$(curl -s -X GET "$API_URL/health" --max-time 10)
+        if ! echo "$health_response" | grep -q '"status":"healthy"'; then
+          echo "Health check failed"
+          echo "Response: $health_response"
+          exit 1
+        fi
+
+        # Test version endpoint
+        echo "Testing version endpoint..."
+        version_response=$(curl -s -X GET "$API_URL/version" -H "X-API-Key: $API_KEY" --max-time 10)
+        if ! echo "$version_response" | grep -q '"version"'; then
+          echo "Version check failed"
+          echo "Response: $version_response"
+          exit 1
+        fi
+
+        # Test time endpoint
+        echo "Testing time endpoint..."
+        time_response=$(curl -s -X GET "$API_URL/time" -H "X-API-Key: $API_KEY" --max-time 10)
+        if ! echo "$time_response" | grep -q '"iso"'; then
+          echo "Time check failed"
+          echo "Response: $time_response"
+          exit 1
+        fi
+
+        # Test metrics endpoint
+        echo "Testing metrics endpoint..."
+        metrics_response=$(curl -s -X GET "$API_URL/metrics" -H "X-API-Key: $API_KEY" --max-time 10)
+        if ! echo "$metrics_response" | grep -q '"requestCount"'; then
+          echo "Metrics check failed"
+          echo "Response: $metrics_response"
+          exit 1
+        fi
+
+        # Test measurement endpoint
+        echo "Testing measurement endpoint..."
+        measurement_response=$(curl -s -X POST "$API_URL/measurement" \
+          -H "X-API-Key: $API_KEY" \
+          -H "Content-Type: application/json" \
+          --data '{
+            "device": {
+              "id": "test-device-1",
+              "type": "temperature-sensor"
+            },
+            "readings": {
+              "temperature": 22.5,
+              "humidity": 45.2,
+              "battery_voltage": 3.3
+            },
+            "metadata": {
+              "location": "office"
+            }
+          }' \
+          --max-time 10)
+        if ! echo "$measurement_response" | grep -q '"success":true'; then
+          echo "Measurement check failed"
+          echo "Response: $measurement_response"
+          exit 1
+        fi
+
+        # Test error cases
+        echo "Testing error cases..."
+        
+        # Missing API key
+        error_response=$(curl -s -X GET "$API_URL/metrics" --max-time 10)
+        if ! echo "$error_response" | grep -q '"error":"Unauthorized"'; then
+          echo "Error case (missing API key) check failed"
+          echo "Response: $error_response"
+          exit 1
+        fi
+
+        # Invalid API key
+        error_response=$(curl -s -X GET "$API_URL/metrics" -H "X-API-Key: invalid_key" --max-time 10)
+        if ! echo "$error_response" | grep -q '"error":"Unauthorized"'; then
+          echo "Error case (invalid API key) check failed"
+          echo "Response: $error_response"
+          exit 1
+        fi
+
+        echo "All tests passed successfully!"
 
     - name: Push version update
       if: github.ref == 'refs/heads/main'

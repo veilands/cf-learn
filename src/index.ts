@@ -1,159 +1,81 @@
 import { Env } from './types';
-import { handleHealthCheck } from './handlers/health';
-import { handleMetrics } from './handlers/metrics';
-import { handleMeasurementRequest } from './handlers/measurement';
+import { handleHealthRequest } from './handlers/health';
+import { handleMetricsRequest } from './handlers/metrics';
 import { handleTimeRequest } from './handlers/time';
+import { handleMeasurementRequest } from './handlers/measurement';
+import { handleBulkMeasurementRequest } from './handlers/bulkMeasurement';
 import { handleVersionRequest } from './handlers/version';
-import { validateApiKey, createErrorResponse } from './middleware/validation';
+import { handleCachePurgeRequest, handleCacheWarmRequest } from './handlers/cache';
 import { rateLimitMiddleware } from './middleware/rateLimit';
-import { recordMetric } from './services/metrics';
-import { Logger } from './services/logger';
+import { validateApiKey } from './middleware/validation';
+import { withErrorHandling } from './middleware/error';
+import { withSecurityHeaders } from './middleware/headers';
+import { recordMetricsMiddleware } from './middleware/metrics';
+import { RateLimiter } from './durable_objects/rateLimiter';
+import { ErrorService } from './services/error';
 
-export { RateLimiter } from './durable_objects/rateLimiter';
+export { RateLimiter };
+
+// Apply middleware to all handlers
+const withMiddleware = (handler: (request: Request, env: Env) => Promise<Response>) =>
+  withErrorHandling(withSecurityHeaders(handler));
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {
-  const start = Date.now();
-  const requestId = crypto.randomUUID();
-  const url = new URL(request.url);
-  const endpoint = url.pathname;
-
   try {
-    Logger.info('Request started', {
-      requestId,
-      method: request.method,
-      endpoint,
-      userAgent: request.headers.get('user-agent'),
-      clientIp: request.headers.get('cf-connecting-ip')
-    });
-
-    // Extract API key
-    const apiKey = request.headers.get('x-api-key');
-
-    // Skip API key validation for health endpoint
-    if (endpoint !== '/health') {
-      // Validate API key
-      const apiKeyError = await validateApiKey(apiKey, env, requestId);
-      if (apiKeyError) {
-        const duration = Date.now() - start;
-        await recordMetric(env, endpoint, apiKeyError.status, duration, {
-          remaining: 0,
-          limit: 100,
-          apiKey: apiKey || 'none'
-        });
-        return apiKeyError;
-      }
-
-      // Check rate limit
-      const rateLimitResponse = await rateLimitMiddleware(request, env, requestId, apiKey!);
-      if (rateLimitResponse) {
-        const duration = Date.now() - start;
-        await recordMetric(env, endpoint, rateLimitResponse.status, duration, {
-          remaining: parseInt(rateLimitResponse.headers.get('X-RateLimit-Remaining') || '0'),
-          limit: parseInt(rateLimitResponse.headers.get('X-RateLimit-Limit') || '100'),
-          apiKey: apiKey!
-        });
-        return rateLimitResponse;
-      }
-    }
-
-    // Route the request
-    let response: Response;
-    try {
-      switch (endpoint) {
-        case '/metrics':
-          response = await handleMetrics(request, env);
-          break;
-        case '/measurement':
-          response = await handleMeasurementRequest(request, env);
-          break;
-        case '/time':
-          response = await handleTimeRequest(request);
-          break;
-        case '/version':
-          response = await handleVersionRequest(request, env);
-          break;
-        case '/health':
-          response = await handleHealthCheck(request, env);
-          break;
-        default:
-          response = createErrorResponse(404, requestId, 'Not Found');
-      }
-
-      // Copy rate limit headers from the rate limiter middleware
-      const headers = new Headers(response.headers);
-      if (endpoint !== '/health' && apiKey) {
-        const rateLimiter = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(apiKey));
-        const rateLimitResponse = await rateLimiter.fetch(new Request(request.url + '/increment'));
-        const rateLimitResult = await rateLimitResponse.json();
-        
-        headers.set('X-RateLimit-Limit', rateLimitResult.headers['X-RateLimit-Limit']);
-        headers.set('X-RateLimit-Remaining', rateLimitResult.headers['X-RateLimit-Remaining']);
-        headers.set('X-RateLimit-Reset', rateLimitResult.headers['X-RateLimit-Reset']);
-      }
-
-      // Add CORS headers for successful responses
-      if (response.status >= 200 && response.status < 300) {
-        headers.set('Access-Control-Allow-Origin', '*');
-        headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Api-Key');
-      }
-      
-      response = new Response(response.body, {
-        status: response.status,
-        headers
-      });
-    } catch (error) {
-      Logger.error('Handler error', {
-        requestId,
-        endpoint,
-        method: request.method,
-        error
-      });
-      response = createErrorResponse(500, requestId, 'Internal Server Error');
-    }
-
-    const duration = Date.now() - start;
+    const url = new URL(request.url);
     
-    // Record metrics with rate limit info if available
-    const rateLimitHeaders = response.headers;
-    if (apiKey && rateLimitHeaders.has('x-ratelimit-limit')) {
-      await recordMetric(env, endpoint, response.status, duration, {
-        remaining: parseInt(rateLimitHeaders.get('x-ratelimit-remaining') || '0'),
-        limit: parseInt(rateLimitHeaders.get('x-ratelimit-limit') || '100'),
-        apiKey
-      });
-    } else {
-      await recordMetric(env, endpoint, response.status, duration);
+    // Apply rate limiting
+    const rateLimitResponse = await rateLimitMiddleware(request, env);
+    if (rateLimitResponse) {
+      return ErrorService.createRateLimitResponse(request, 60);
     }
 
-    Logger.info('Request completed', {
-      requestId,
-      status: response.status,
-      duration_ms: duration
-    });
+    // Validate API key for protected endpoints
+    if (url.pathname !== '/health' && url.pathname !== '/time' && url.pathname !== '/version' && url.pathname !== '/cache/purge' && url.pathname !== '/cache/warm') {
+      const authError = await validateApiKey(request, env);
+      if (authError) return authError;
+    }
 
-    return response;
+    // Route requests with middleware
+    switch (url.pathname) {
+      case '/health':
+        return withMiddleware(handleHealthRequest)(request, env);
+      case '/time':
+        return withMiddleware(handleTimeRequest)(request, env);
+      case '/version':
+        return withMiddleware(handleVersionRequest)(request, env);
+      case '/metrics':
+        return withMiddleware(handleMetricsRequest)(request, env);
+      case '/measurement':
+        return withMiddleware(handleMeasurementRequest)(request, env);
+      case '/measurements/bulk':
+        return withMiddleware(handleBulkMeasurementRequest)(request, env);
+      case '/cache/purge':
+        return withMiddleware(handleCachePurgeRequest)(request, env);
+      case '/cache/warm':
+        return withMiddleware(handleCacheWarmRequest)(request, env);
+      default:
+        return new Response(JSON.stringify({
+          error: 'Not Found',
+          message: 'Endpoint not found',
+          details: { path: url.pathname }
+        }), {
+          status: 404,
+          headers: new Headers({ 'Content-Type': 'application/json' })
+        });
+    }
   } catch (error) {
-    const duration = Date.now() - start;
-    Logger.error('Request failed', {
-      requestId,
-      endpoint,
-      error,
-      method: request.method,
-      userAgent: request.headers.get('user-agent'),
-      clientIp: request.headers.get('cf-connecting-ip')
-    });
-    
-    await recordMetric(env, endpoint, 500, duration);
-    
-    return createErrorResponse(500, requestId, 'Internal Server Error');
+    return ErrorService.createErrorResponse(request, error);
   }
 }
 
-const worker = {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env);
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const response = await handleRequest(request, env);
+    
+    // Record metrics asynchronously
+    ctx.waitUntil(recordMetricsMiddleware(request, response, env));
+    
+    return response;
   }
 };
-
-export default worker;

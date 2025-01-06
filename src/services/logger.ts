@@ -8,6 +8,21 @@ interface LogContext {
   duration_ms?: number;
   error?: any;
   data?: any;
+  cf?: {
+    colo?: string;
+    country?: string;
+    asn?: number;
+    tlsVersion?: string;
+    httpProtocol?: string;
+    botManagement?: any;
+    cacheTtl?: number;
+    cacheEverything?: boolean;
+    scrapeShield?: boolean;
+    apps?: boolean;
+    minify?: any;
+    mirage?: boolean;
+    polish?: string;
+  };
   [key: string]: any;
 }
 
@@ -30,7 +45,8 @@ export class Logger {
       return {
         message: error.message,
         stack: error.stack,
-        name: error.name
+        name: error.name,
+        cause: error.cause
       };
     }
     return error;
@@ -41,6 +57,27 @@ export class Logger {
     
     if (formattedContext.error) {
       formattedContext.error = this.formatError(formattedContext.error);
+    }
+
+    // Add Cloudflare-specific context if available
+    if (formattedContext.request instanceof Request) {
+      const req = formattedContext.request as Request;
+      formattedContext.cf = {
+        colo: req.cf?.colo,
+        country: req.cf?.country,
+        asn: req.cf?.asn,
+        tlsVersion: req.cf?.tlsVersion,
+        httpProtocol: req.cf?.httpProtocol,
+        botManagement: req.cf?.botManagement,
+        cacheTtl: req.cf?.cacheTtl,
+        cacheEverything: req.cf?.cacheEverything,
+        scrapeShield: req.cf?.scrapeShield,
+        apps: req.cf?.apps,
+        minify: req.cf?.minify,
+        mirage: req.cf?.mirage,
+        polish: req.cf?.polish
+      };
+      delete formattedContext.request;
     }
 
     return formattedContext;
