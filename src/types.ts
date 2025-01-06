@@ -4,7 +4,10 @@ import { MeasurementRequestSchema } from './middleware/validation';
 export interface Env {
   // KV Namespaces
   API_KEYS: KVNamespace;
-  METRICS: KVNamespace;
+
+  // Durable Objects
+  METRICS_COUNTER: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
 
   // Environment Variables
   INFLUXDB_URL: string;
@@ -12,8 +15,8 @@ export interface Env {
   INFLUXDB_BUCKET: string;
   INFLUXDB_TOKEN: string;
 
-  // Durable Objects
-  RATE_LIMITER: DurableObjectNamespace;
+  // ExecutionContext
+  ctx: ExecutionContext;
 }
 
 // Infer the type from the Zod schema

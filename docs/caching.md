@@ -13,8 +13,15 @@ Our caching system utilizes Cloudflare's built-in Cache API and edge caching cap
 Currently, the following endpoints are cached:
 
 - `/version` - Cached for 1 hour (3600 seconds)
+  - Most stable endpoint
+  - Supports cache purging
+- `/metrics` - Cached for 10 seconds
+  - Provides system metrics from Durable Objects
+  - Short cache duration to ensure fresh data
+  - Supports cache purging
 - `/health` - Cached for 30 seconds
-- `/metrics` - Cached for 60 seconds (with conditional caching)
+  - System health status
+  - Supports cache purging
 
 ### Cache Key Strategy
 
@@ -52,56 +59,59 @@ Our responses include the following cache-related headers:
 ### Cloudflare-Specific Headers
 - `CF-Cache-Status` - Cloudflare cache status (HIT, MISS, EXPIRED, REVALIDATED)
 - `CF-Cache-Tags` - Custom cache tags for purging
-- `CDN-Cache-Control` - CDN-specific cache control
-- `Cloudflare-CDN-Cache-Control` - Cloudflare-specific cache directives
-
-### Performance Headers
-- `103-Early-Hints` - Pre-loading hints for cached resources
-- `Link: </style.css>; rel=preload` - Resource hints for caching
 
 ## Cache Management
 
 ### Cache Purging
 
-To purge a cached endpoint:
+The system supports two methods of cache purging:
+
+#### 1. Purge All Cache (No Request Body)
+Purges cache for all purgeable endpoints (`/version`, `/health`, `/metrics`):
 
 ```bash
 curl -X POST https://api.pasts.dev/cache/purge \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/version"}'
+  -H "X-API-Key: your_api_key"
 ```
 
-#### Response Example (Success)
+Response:
 ```json
 {
-  "success": true,
-  "message": "Cache purged for path: /version",
-  "requestId": "uuid",
-  "timestamp": "2025-01-06T13:24:34Z"
+  "message": "All cache purged (3 endpoints)",
+  "requestId": "53bf0741-a59d-46cf-be73-5fe8a66c146a"
 }
 ```
 
-#### Response Example (Invalid Path)
+#### 2. Purge Specific Endpoint (JSON Request Body)
+Purges cache for a specific endpoint:
+
+```bash
+curl -X POST https://api.pasts.dev/cache/purge \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_api_key" \
+  -d '{"path": "/health"}'
+```
+
+Response:
+```json
+{
+  "message": "Cache purged for endpoint: /health",
+  "requestId": "7d9e0532-b8f4-4c1a-9f2b-3e5d8b6a9c01"
+}
+```
+
+Error Response (Invalid Path):
 ```json
 {
   "error": "Bad Request",
   "message": "Path /invalid is not allowed to be purged. Allowed paths: /version, /health, /metrics",
-  "requestId": "uuid",
-  "timestamp": "2025-01-06T13:24:34Z"
+  "requestId": "f09b0f58-61c7-47e8-ba52-a046a8451e9b"
 }
 ```
 
-### Cache Warming
+## Cache Warming
 
-Endpoints can be pre-warmed using:
-
-```bash
-curl -X POST https://api.pasts.dev/cache/warm \
-  -H "x-api-key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"paths": ["/version", "/health"]}'
-```
+Cache warming is not currently implemented as our endpoints are frequently accessed and naturally warm the cache. The short cache durations (10-30 seconds for most endpoints) also reduce the need for explicit cache warming.
 
 ## Cache Validation
 
@@ -118,12 +128,7 @@ curl -X POST https://api.pasts.dev/cache/warm \
    - Automatic compression (Brotli/Gzip)
    - Smart routing to nearest edge location
 
-2. **Cache Warming**
-   - Automated cache warming after deployments
-   - Periodic cache refresh for critical endpoints
-   - Geographic-based cache warming
-
-3. **Early Hints**
+2. **Early Hints**
    - 103 Early Hints for cached resources
    - Preload critical assets
    - Reduce perceived latency

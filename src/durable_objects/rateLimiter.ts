@@ -18,7 +18,7 @@ export class RateLimiter {
     this.state = state;
     this.config = {
       limit: 100,
-      window: 3600 // seconds
+      window: 60 // seconds (1 minute window)
     };
   }
 

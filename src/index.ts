@@ -12,48 +12,54 @@ import { withErrorHandling } from './middleware/error';
 import { withSecurityHeaders } from './middleware/headers';
 import { recordMetricsMiddleware } from './middleware/metrics';
 import { RateLimiter } from './durable_objects/rateLimiter';
+import { MetricsCounter } from './durable_objects/metricsCounter';
 import { ErrorService } from './services/error';
 
 export { RateLimiter };
+export { MetricsCounter };
 
 // Apply middleware to all handlers
-const withMiddleware = (handler: (request: Request, env: Env) => Promise<Response>) =>
-  withErrorHandling(withSecurityHeaders(handler));
+const withMiddleware = (handler: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>) =>
+  withErrorHandling(withSecurityHeaders(recordMetricsMiddleware(handler)));
 
-async function handleRequest(request: Request, env: Env): Promise<Response> {
+async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     const url = new URL(request.url);
     
-    // Apply rate limiting
-    const rateLimitResponse = await rateLimitMiddleware(request, env);
-    if (rateLimitResponse) {
-      return ErrorService.createRateLimitResponse(request, 60);
-    }
-
-    // Validate API key for protected endpoints
-    if (url.pathname !== '/health' && url.pathname !== '/time' && url.pathname !== '/version' && url.pathname !== '/cache/purge' && url.pathname !== '/cache/warm') {
+    // Add ExecutionContext to env
+    env.ctx = ctx;
+    
+    // Skip auth and rate limiting for public endpoints
+    if (!['/health', '/time', '/version', '/cache/purge', '/cache/warm'].includes(url.pathname)) {
+      // Validate API key first
       const authError = await validateApiKey(request, env);
       if (authError) return authError;
+
+      // Then apply rate limiting
+      const rateLimitResponse = await rateLimitMiddleware(request, env);
+      if (rateLimitResponse) {
+        return ErrorService.createRateLimitResponse(request, 60);
+      }
     }
 
     // Route requests with middleware
     switch (url.pathname) {
       case '/health':
-        return withMiddleware(handleHealthRequest)(request, env);
+        return withMiddleware(handleHealthRequest)(request, env, ctx);
       case '/time':
-        return withMiddleware(handleTimeRequest)(request, env);
+        return withMiddleware(handleTimeRequest)(request, env, ctx);
       case '/version':
-        return withMiddleware(handleVersionRequest)(request, env);
+        return withMiddleware(handleVersionRequest)(request, env, ctx);
       case '/metrics':
-        return withMiddleware(handleMetricsRequest)(request, env);
+        return withMiddleware(handleMetricsRequest)(request, env, ctx);
       case '/measurement':
-        return withMiddleware(handleMeasurementRequest)(request, env);
+        return withMiddleware(handleMeasurementRequest)(request, env, ctx);
       case '/measurements/bulk':
-        return withMiddleware(handleBulkMeasurementRequest)(request, env);
+        return withMiddleware(handleBulkMeasurementRequest)(request, env, ctx);
       case '/cache/purge':
-        return withMiddleware(handleCachePurgeRequest)(request, env);
+        return withMiddleware(handleCachePurgeRequest)(request, env, ctx);
       case '/cache/warm':
-        return withMiddleware(handleCacheWarmRequest)(request, env);
+        return withMiddleware(handleCacheWarmRequest)(request, env, ctx);
       default:
         return new Response(JSON.stringify({
           error: 'Not Found',
@@ -61,7 +67,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
           details: { path: url.pathname }
         }), {
           status: 404,
-          headers: new Headers({ 'Content-Type': 'application/json' })
+          headers: { 'Content-Type': 'application/json' }
         });
     }
   } catch (error) {
@@ -70,12 +76,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const response = await handleRequest(request, env);
-    
-    // Record metrics asynchronously
-    ctx.waitUntil(recordMetricsMiddleware(request, response, env));
-    
-    return response;
+  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    return handleRequest(request, env, ctx);
   }
 };

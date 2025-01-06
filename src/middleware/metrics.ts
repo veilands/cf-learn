@@ -1,28 +1,30 @@
 import { Env } from '../types';
-import { recordRequestMetrics } from '../services/metrics';
+import { MetricsService } from '../services/metrics';
+import { Logger } from '../services/logger';
 
-export async function recordMetricsMiddleware(request: Request, response: Response, env: Env): Promise<void> {
-  const url = new URL(request.url);
-  const startTime = Date.now();
-  
-  try {
-    // Get Cloudflare-specific information
-    const cf = request.cf as { country?: string; colo?: string; asn?: number } | undefined;
-    
-    // Record request metrics
-    await recordRequestMetrics(env, {
-      timestamp: new Date().toISOString(),
-      endpoint: url.pathname,
-      status: response.status,
-      duration: Date.now() - startTime,
-      cf: cf ? {
-        country: cf.country,
-        colo: cf.colo,
-        asn: cf.asn
-      } : undefined
-    });
-  } catch (error) {
-    // Log error but don't throw to avoid affecting the response
-    console.error('Failed to record metrics:', error);
-  }
+export function recordMetricsMiddleware(
+  handler: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>
+): (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> {
+  return async (request: Request, env: Env, ctx: ExecutionContext) => {
+    const endpoint = new URL(request.url).pathname;
+    let response: Response;
+
+    try {
+      response = await handler(request, env, ctx);
+      const success = response.status < 400;
+
+      // Record metrics in the background
+      ctx.waitUntil(
+        MetricsService.recordRequest(env, endpoint, success)
+      );
+
+      return response;
+    } catch (error) {
+      // Record error metrics in the background
+      ctx.waitUntil(
+        MetricsService.recordRequest(env, endpoint, false)
+      );
+      throw error;
+    }
+  };
 }

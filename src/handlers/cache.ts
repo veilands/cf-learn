@@ -4,7 +4,9 @@ import { Logger } from '../services/logger';
 
 // List of endpoints that can be purged
 const PURGEABLE_ENDPOINTS = [
-  '/version'
+  '/version',
+  '/health',
+  '/metrics'
 ];
 
 export async function handleCachePurgeRequest(request: Request, env: Env): Promise<Response> {
@@ -19,92 +21,76 @@ export async function handleCachePurgeRequest(request: Request, env: Env): Promi
     const apiKeyError = await validateApiKey(request, env);
     if (apiKeyError) return apiKeyError;
 
-    // Get path to purge from request body
-    const body = await request.json();
-    const path = body.path as string;
+    // Check if we have a request body
+    const contentType = request.headers.get('content-type');
+    let path: string | undefined;
 
-    if (!path) {
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        const body = await request.json();
+        path = body.path;
+      } catch (error) {
+        return new Response(JSON.stringify({
+          error: 'Bad Request',
+          message: 'Invalid JSON body',
+          requestId
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
+    if (path) {
+      // Validate the path is allowed to be purged
+      if (!PURGEABLE_ENDPOINTS.includes(path)) {
+        return new Response(JSON.stringify({
+          error: 'Bad Request',
+          message: `Path ${path} is not allowed to be purged. Allowed paths: ${PURGEABLE_ENDPOINTS.join(', ')}`,
+          requestId
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Purge specific endpoint cache
+      const cacheKey = `cache:${path}`;
+      await env.METRICS.delete(cacheKey);
+
+      Logger.info('Cache purged for endpoint', { requestId, path });
+
       return new Response(JSON.stringify({
-        error: 'Bad Request',
-        message: 'Path is required',
+        message: `Cache purged for endpoint: ${path}`,
         requestId
       }), {
-        status: 400,
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } else {
+      // Purge all cache
+      let purged = 0;
+      for (const endpoint of PURGEABLE_ENDPOINTS) {
+        const cacheKey = `cache:${endpoint}`;
+        await env.METRICS.delete(cacheKey);
+        purged++;
+      }
+
+      Logger.info('All cache purged', { requestId, purgedCount: purged });
+
+      return new Response(JSON.stringify({
+        message: `All cache purged (${purged} endpoints)`,
+        requestId
+      }), {
+        status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
     }
-
-    // Validate the path is allowed to be purged
-    if (!PURGEABLE_ENDPOINTS.includes(path)) {
-      return new Response(JSON.stringify({
-        error: 'Bad Request',
-        message: `Path ${path} is not allowed to be purged. Allowed paths: ${PURGEABLE_ENDPOINTS.join(', ')}`,
-        requestId
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Create cache key for purging
-    const baseUrl = new URL(request.url).origin;
-    const urlToInvalidate = new URL(path, baseUrl).toString();
-
-    // Create cache keys for different Accept and Accept-Encoding combinations
-    const cacheKeys = [
-      // JSON without encoding
-      new Request(urlToInvalidate, {
-        headers: {
-          'Accept': 'application/json'
-        }
-      }),
-      // JSON with gzip
-      new Request(urlToInvalidate, {
-        headers: {
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip'
-        }
-      }),
-      // JSON with br (brotli)
-      new Request(urlToInvalidate, {
-        headers: {
-          'Accept': 'application/json',
-          'Accept-Encoding': 'br'
-        }
-      })
-    ];
-
-    // Get the cache instance
-    const cache = caches.default;
-
-    // Delete all cache variations
-    const purgeResults = await Promise.all(
-      cacheKeys.map(key => cache.delete(key))
-    );
-
-    const purged = purgeResults.some(result => result);
-
-    Logger.info('Cache purge attempt', { 
-      path, 
-      purged,
-      requestId 
-    });
-
-    return new Response(JSON.stringify({
-      success: true,
-      message: purged ? 
-        `Cache purged for path: ${path}` : 
-        `No cache entries found for path: ${path}`,
-      requestId
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
   } catch (error) {
-    Logger.error('Error purging cache', { error, requestId });
+    Logger.error('Failed to purge cache', { requestId, error });
     return new Response(JSON.stringify({
       error: 'Internal Server Error',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      message: 'Failed to purge cache',
       requestId
     }), {
       status: 500,
@@ -115,7 +101,9 @@ export async function handleCachePurgeRequest(request: Request, env: Env): Promi
 
 // List of endpoints that should be warmed
 const WARM_ENDPOINTS = [
-  '/version' // Only warm version endpoint for now as it's the most stable
+  '/version', // Most stable endpoint
+  '/health',  // Quick health check
+  '/metrics'  // System metrics
 ];
 
 // Maximum time to wait for each endpoint warming

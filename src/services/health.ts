@@ -1,4 +1,4 @@
-import { Env, DependencyStatus } from '../types';
+import { Env, DependencyStatus, HealthStatus } from '../types';
 import { Logger } from './logger';
 
 type HealthStatus = {
@@ -164,5 +164,71 @@ export async function checkInfluxDBHealth(env: Env): Promise<DependencyStatus> {
       latency,
       message: error instanceof Error ? error.message : 'Unknown error'
     };
+  }
+}
+
+export class HealthService {
+  static async checkHealth(env: Env) {
+    const kvStatus = await this.checkKVStore(env);
+    const influxStatus = await this.checkInfluxDB(env);
+    
+    const timestamp = new Date().toISOString();
+    const overallStatus = kvStatus.status === 'healthy' && influxStatus.status === 'healthy' 
+      ? 'healthy' 
+      : 'unhealthy';
+
+    return {
+      timestamp,
+      status: overallStatus,
+      dependencies: {
+        kv_store: kvStatus,
+        influxdb: influxStatus
+      }
+    };
+  }
+
+  static async checkKVStore(env: Env): Promise<{ status: HealthStatus; latency: number; message?: string }> {
+    const start = Date.now();
+    try {
+      // Try to access KV store
+      await env.API_KEYS.get('test_key');
+      const latency = Date.now() - start;
+      return { status: 'healthy', latency };
+    } catch (error) {
+      const latency = Date.now() - start;
+      Logger.error('KV store health check failed', { error });
+      return {
+        status: 'unhealthy',
+        latency,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  static async checkInfluxDB(env: Env): Promise<{ status: HealthStatus; latency: number; message?: string }> {
+    const start = Date.now();
+    try {
+      const response = await fetch(`${env.INFLUXDB_URL}/health`, {
+        headers: {
+          'Authorization': `Token ${env.INFLUXDB_TOKEN}`
+        }
+      });
+
+      const latency = Date.now() - start;
+
+      if (!response.ok) {
+        throw new Error(`InfluxDB returned status ${response.status}`);
+      }
+
+      return { status: 'healthy', latency };
+    } catch (error) {
+      const latency = Date.now() - start;
+      Logger.error('InfluxDB health check failed', { error });
+      return {
+        status: 'unhealthy',
+        latency,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 }

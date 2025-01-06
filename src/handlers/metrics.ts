@@ -1,10 +1,11 @@
 import { Env } from '../types';
 import { validateHttpMethod } from '../middleware/validation';
 import { validateApiKey } from '../middleware/auth';
+import { withCache } from '../middleware/cache';
 import { Logger } from '../services/logger';
-import { getAggregatedMetrics } from '../services/metrics';
+import { MetricsService } from '../services/metrics';
 
-export async function handleMetricsRequest(request: Request, env: Env): Promise<Response> {
+async function handleMetricsRequestInternal(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const requestId = request.headers.get('x-request-id') || crypto.randomUUID();
   Logger.info('Processing metrics request', { 
     requestId, 
@@ -19,19 +20,25 @@ export async function handleMetricsRequest(request: Request, env: Env): Promise<
     const authError = await validateApiKey(request, env);
     if (authError) return authError;
 
-    // Get aggregated metrics
-    const metrics = await getAggregatedMetrics(env);
+    // Get metrics
+    const metrics = await MetricsService.getMetrics(env);
+    Logger.debug('Retrieved metrics', { requestId, metrics });
 
-    return new Response(JSON.stringify(metrics), {
+    const response = new Response(JSON.stringify(metrics, null, 2), {
       status: 200,
-      headers: new Headers({
+      headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'no-store, no-cache',
-        'X-RateLimit-Limit': '100',
-        'X-RateLimit-Remaining': '99',
-        'X-RateLimit-Reset': (Math.floor(Date.now() / 1000) + 3600).toString()
-      })
+        'Cache-Control': 'public, max-age=10'
+      }
     });
+
+    Logger.debug('Sending metrics response', { 
+      requestId, 
+      status: response.status,
+      metrics: Object.keys(metrics).length 
+    });
+
+    return response;
   } catch (error) {
     Logger.error('Metrics handler error', { requestId, error });
     return new Response(JSON.stringify({
@@ -40,10 +47,15 @@ export async function handleMetricsRequest(request: Request, env: Env): Promise<
       requestId
     }), {
       status: 500,
-      headers: new Headers({
+      headers: {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store'
-      })
+      }
     });
   }
 }
+
+// Apply cache middleware with 10 second TTL
+export const handleMetricsRequest = withCache(handleMetricsRequestInternal, {
+  cacheDuration: 10
+});

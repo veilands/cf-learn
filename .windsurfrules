@@ -2,18 +2,23 @@ This project is a serverless backend for IoT project where we are on cloudflare 
 we use cloudflare workers with cloudflare ready made serverless architecture fetures 
 
 Programming languages: 
-- cloudflare workers and typescript which is serverless architecture and we are building a backend for 
-IoT devices.
+- cloudflare workers and typescript which is serverless architecture and we are building a 
+backend for IoT devices.
 - we use typescript for the backend
 - we use cloudflare worker for the backend
 - we use influxdb for storing measurements
 - cache in cloudflare cache api for caching
 - we use wrangler for deployment
 - durable objects for rate limiting
+- durable objects for metrics
+- durable objects for logging
 
-we follow the pattern of REST API we use api key (which is stored in KV - my_api_key_12345) for authentication and rate limiting with durable objects
+we follow the pattern of REST API we use api key (which is stored in cloudflare KV - my_api_key_12345) for authentication and rate limiting with durable objects
 we first amend code, then deploy, then test with cloudflare workers
 when testing with curl always add timeout to requests to avoid waiting forever max 10 seconds
+
+when testing endpoints - /verison, /health, /metrics we keep them cached so we have to purge cache manually 
+purge cache with curl -X POST https://api.pasts.dev/purge -H "x-api-key: my_api_key_12345" 
 
 we use git for version control (with github) and husky for git hooks to increment version with each commit
 
@@ -21,7 +26,11 @@ we use CloudFlare workers secretes for sensitive data
 INFLUXDB_TOKEN is a secret which is stored in cloudflare, manually added and not pushed to github and nobody can see it and you don't have to worry about it
 - we keep documentation in docs folder
 - we use mermaid for diagrams
-- readme.md is for documentation and installation instructions
+- readme.md is for documentation and installation instructions we keep it up to date before pushing to github
+- docs/api.md is for API documentation we keep it up to date before pushing to github
+- docs/architecture.md is for architecture documentation we keep it up to date before pushing to github
+- docs/caching.md is for caching documentation we keep it up to date before pushing to github
+- docs/logging.md is for logging documentation we keep it up to date before pushing to github
 - authorization is done with API keys which we store in KV for tests use my_api_key_12345
 - there is a public folder for static assets which are served by cloudflare workers ./public
 - for API testing we url - https://api.pasts.dev

@@ -1,32 +1,23 @@
 import { Env } from '../types';
-import { HeadersService } from '../services/headers';
 
 export function withSecurityHeaders(
-  handler: (request: Request, env: Env) => Promise<Response>
-): (request: Request, env: Env) => Promise<Response> {
-  return async (request: Request, env: Env) => {
-    const response = await handler(request, env);
-    const newHeaders = new Headers(response.headers);
+  handler: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>
+): (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> {
+  return async (request: Request, env: Env, ctx: ExecutionContext) => {
+    const response = await handler(request, env, ctx);
     
-    // Add security headers
-    HeadersService.addSecurityHeaders(newHeaders);
-
-    // Add CORS headers if needed
-    const origin = request.headers.get('Origin');
-    if (origin) {
-      HeadersService.addCorsHeaders(newHeaders, origin);
-    }
-
-    // Add debug headers in development
-    HeadersService.addDebugHeaders(newHeaders, request);
-
-    // Add performance headers
-    HeadersService.addPerformanceHeaders(newHeaders);
-
+    // Clone the response to add security headers
+    const headers = new Headers(response.headers);
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('X-Frame-Options', 'DENY');
+    headers.set('X-XSS-Protection', '1; mode=block');
+    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
-      headers: newHeaders
+      headers
     });
   };
 }

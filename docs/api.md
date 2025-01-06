@@ -20,16 +20,45 @@ curl -H "x-api-key: YOUR_API_KEY" https://api.pasts.dev/endpoint
 
 ## Rate Limiting
 
-Rate limiting is implemented using Cloudflare Durable Objects:
-- Limits are applied per API key
-- Default limit: 100 requests per minute
-- Bulk measurements count as a single request
-- Rate limit headers are included in responses:
-  ```
-  X-RateLimit-Limit: 100
-  X-RateLimit-Remaining: 99
-  X-RateLimit-Reset: 1704549600
-  ```
+Rate limiting is implemented using Cloudflare Durable Objects with the following configuration:
+
+### Rate Limited Endpoints
+The following endpoints are rate limited to 100 requests per minute per API key:
+- `/measurement` - Single measurement submission
+- `/measurements/bulk` - Bulk measurement submission
+- `/metrics` - System metrics and statistics
+
+### Public Endpoints
+The following endpoints are public and not rate limited:
+- `/health` - System health check
+- `/time` - Current server time
+- `/version` - API version info
+- `/cache/purge` - Cache purge endpoint
+- `/cache/warm` - Cache warming endpoint
+
+### Rate Limit Headers
+All rate-limited endpoints include the following headers in responses:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 99
+X-RateLimit-Reset: 1704549600
+```
+
+### Rate Limit Exceeded Response
+When rate limit is exceeded, the API returns:
+- Status Code: `429 Too Many Requests`
+- Headers:
+  - `Retry-After: 60` (seconds until rate limit resets)
+  - `X-RateLimit-*` headers showing current limits
+- Response Body:
+```json
+{
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded",
+  "errorId": "unique-request-id",
+  "retryAfter": 60
+}
+```
 
 ## Endpoints
 
